@@ -1,6 +1,9 @@
 import math
 import copy
+import pytz
+import types
 import numpy as np
+import pandas as pd
 import datetime as dt
 from datetime import timedelta as td
 from pytz import timezone
@@ -15,19 +18,36 @@ def stat_dic(df):
     return {'pandas.DataFrame.cov' : df.cov().to_json(),
             'pandas.DataFrame.describe' : df.describe().to_json()}
 
+
 def df_ind_col_op(df, column = None, op = min):
     try:
          return op(df[column])
     except:
          return op(df.index)
 
-def pd_interval2str(i):
-    ii = str(i)
 
-    return ii[0] + str(i.left) + ',' + str(i.right) + ii[-1]
+def iter2list(o):
+    if (isinstance(o, range) or isinstance(o, types.GeneratorType)) and not isinstance(o, str):
+        return list(iter(o))
+
+    return o
+
+def str2pd_interval(o, tz='America/New_York'):
+    oo = o.split(',')
+    f = lambda x : to_timezone(pd.Timestamp(x), pytz.timezone(tz))
+    return pd.Interval(f(oo[0][1:]), f(oo[1][:-1]))
+
+    # return o
+
+def pd_interval2str(o):
+    if isinstance(o, pd.Interval):
+        oo = str(o)
+        return oo[0] + str(o.left) + ',' + str(o.right) + oo[-1]
+
+    return o
 
 
-def iterLength(*args):
+def iter_length(*args):
     out = []
     for x in args:
         if x is None: out.append(0)
@@ -37,7 +57,7 @@ def iterLength(*args):
     return out
 
 
-def returnIter(v, n=1):
+def multiply_iter(v, n=1):
     if isinstance(v, str): return [v]*n
     o = copy.deepcopy(v)
 
@@ -48,7 +68,7 @@ def returnIter(v, n=1):
         return [o]*n
 
 
-def Mbool(val, st=' ', useBool=True):
+def mbool(val, st=' ', useBool=True):
     if isinstance(val, str): return bool(val.strip(st))
     elif useBool: return bool(val)
     else: return True

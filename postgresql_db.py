@@ -7,7 +7,12 @@ import io
 from marksman_extras import *
 import uuid
 from datetime import datetime, timedelta, date
-from connectors import *
+
+with open('connections.txt') as f:
+    exec(f.read())
+SQLconn
+SQLengine
+
 
 def get_table_as_df(connOrEngine, tbl, columns=None, schema=None, **kwargs):
     return query_get_df(connOrEngine, sql.SQL('SELECT {} FROM {}{}') \
@@ -49,8 +54,8 @@ def composed_parse(exp, enclose=False, parse=None):
             e = exp.split('%s')
             returned = s(e[0]) + p + s(e[1])
         else: returned =  n(exp.strip('$'))
-    elif isinstance(exp, dict): returned = composed_columns(filter(Mbool, [k for k in exp.keys() if exp[k]]), enclose=enclose, parse=parse)
-    elif isinstance(exp, tuple): returned = composed_columns(filter(Mbool, exp), enclose=enclose, parse=parse)
+    elif isinstance(exp, dict): returned = composed_columns(filter(mbool, [k for k in exp.keys() if exp[k]]), enclose=enclose, parse=parse)
+    elif isinstance(exp, tuple): returned = composed_columns(filter(mbool, exp), enclose=enclose, parse=parse)
     elif isinstance(exp, sql.Placeholder): returned = exp
     else:
         expPrev = exp[0]
@@ -58,7 +63,7 @@ def composed_parse(exp, enclose=False, parse=None):
             if x == expPrev: raise ValueError("Something's funny going on - a pattern is repeated")
             else: expPrev = x
 
-        return sql.Composed([composed_parse(x, enclose) for x in filter(Mbool, exp)])
+        return sql.Composed([composed_parse(x, enclose) for x in filter(mbool, exp)])
 
     return s(' ') + returned + s(' ')
 
@@ -120,7 +125,7 @@ def composed_from_join(join=None, tables=None, columns=None, using=None):
     s = sql.SQL
     n = lambda x : composed_separated(x, '.')
     joinc = []
-    for v in returnIter(join, max(iterLength(tables, columns, using))):
+    for v in multiply_iter(join, max(iter_length(tables, columns, using))):
         vj = '$'+v+'$' if v else v
         joinc.append(composed_parse([vj, '$ JOIN $']))
 
@@ -211,7 +216,7 @@ def composed_separated(names, sep=', ', AS=False, parse=None):
     s, n, _ = operators()
     if not parse: parse = n
     if isinstance(names, str): names = [names]
-    names = list(filter(Mbool, names))
+    names = list(filter(mbool, names))
 
     if sep in [',', '.', ', ', ' ', '    ']:
         comp = s(sep).join(map(parse, names))

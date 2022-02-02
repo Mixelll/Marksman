@@ -24,15 +24,25 @@ l = lambda x : pytz.timezone('America/New_York').localize(pd.Timestamp(x))
 lol = l(datetime.now())
 r = pd.Interval(l(datetime(2021,10,8)), l(datetime.now()))
 q = {r : {r : range(0,7)}}
+ss = str2pd_interval('(2021-10-08 00:00:00-04:00,2022-02-02 23:27:41.244237-05:00]')
+# print(ss)
+# print(type(ss))
 
-# print(oc)
 
 # print(json.loads('{"(2021-10-08 00:00:00-04:00,2022-02-02 14:45:03.496819-05:00]": {"(2021-10-08 00:00:00-04:00,2022-02-02 14:45:03.496819-05:00]": 77}}'))
+# print(str2pd_interval('(2021-10-08 00:00:00-04:00,2022-02-02 14:45:03.496819-05:00]'))
 # print(json.dumps(q, cls=JamesonEncoder))
-print(json.dumps({r : {r : 'k'},'hhh' : {r : 'k'}, 'no' : q}, cls=JamesonEncoder))
+print('From')
+p = {r : {r : 'k'},'hhh' : {r : 'k'}, 'no' : q}
+# p = {r : 5}
+print(p)
+print('To')
+j = json.dumps(p, cls=JamesonEncoder)
+print(j)
+print('And back to')
+print(json.loads(j , cls=JamesonDecoder))
+# json.loads('{"(2021-10-08 00:00:00-04:00,2022-02-02 23:37:58.859681-05:00]": {"(2021-10-08 00:00:00-04:00,2022-02-02 23:37:58.859681-05:00]": "k"}, "hhh": {"(2021-10-08 00:00:00-04:00,2022-02-02 23:37:58.859681-05:00]": "k"}, "no": {"(2021-10-08 00:00:00-04:00,2022-02-02 23:37:58.859681-05:00]": {"(2021-10-08 00:00:00-04:00,2022-02-02 23:37:58.859681-05:00]": [0, 1, 2, 3, 4, 5, 6]}}}' , cls=JamesonDecoder)
 
-# print(q)
-# print(pd_interval2str(r))
 # # time.sleep(1)
 # lol = l(datetime.now())
 # print(q[r])
