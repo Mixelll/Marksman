@@ -34,15 +34,15 @@ dm_uuid = ''
 
 # Stock data
 tickers = ['AMZN','AAPL']
-barSizesSamples = {'1 month' : 5 , '1 week' : 5 , '1 day' : 5}
-barSizesSamples = {'1 month' : 1}
+barSizesSamples = {'1 month': 5 , '1 week': 5 , '1 day': 5}
+barSizesSamples = {'1 month': 1}
 inputColumns = ['percent']
 targetColumns = ['percent']
 startDate = datetime(2010,7,1)
 endDate = None
 index = 'date'
-toJSON = {'tickers' : tickers, 'barSizesSamples' : barSizesSamples, 'inputColumns' : inputColumns,
-            'targetColumns' : targetColumns, 'startDate' : startDate, 'endDate' : endDate}
+toJSON = {'tickers': tickers, 'barSizesSamples': barSizesSamples, 'inputColumns': inputColumns,
+            'targetColumns': targetColumns, 'startDate': startDate, 'endDate': endDate}
 # aggregate_tables(SQLconn, ['AMZN_1 day', 'AAPL_1 day', 'AAPL_1 month'], inputColumns, 'date', startDate = startDate, endDate = endDate, CREATE = True)
 # Model params
 hiddenSizes = [3,5,8]
@@ -58,7 +58,7 @@ else:
 print(inputNames)
 print(targetNames)
 print(inputs.shape)
-# [print('{} : {}'.format(e,p)) for e,p in zip(inputNames, inputs[0])]
+# [print('{}: {}'.format(e,p)) for e,p in zip(inputNames, inputs[0])]
 
 
 cov = np.cov(inputs.transpose())
@@ -75,7 +75,7 @@ DS = tud.TensorDataset(inputs, targets)
 
 model = MultiLayerModel1(inputs.shape[-1], hiddenSizes, outSize)
 if not dm_uuid and commit:
-    torchBinary = {'model' : model}
+    torchBinary = {'model': model}
     col_dm = ['tickers', 'columns', 'index', 'text', 'binary', 'binaryKeys', 'ds_uuid']
     sqlComposed = composed_insert('models_prime', col_dm, schema = 'dm', returning = ['uuid'])
     val_dm = [(tickers, columns, index, str(torchBinary).replace('\n', ''), save_io(torchBinary).read(), list(torchBinary.keys()).sort(), ds_uuid)]
@@ -129,17 +129,17 @@ for u in range(0,1):
     # print([p for p in model.parameters()])
     # dbPackage = None
     if commit:
-        vin = {'tickers' : tickers, 'columns' :  columns, 'index' : index, 'dr_uuid' : dr_uuid, 'dm_uuid' : dm_uuid, 'ds_uuid' : ds_uuid}
+        vin = {'tickers': tickers, 'columns':  columns, 'index': index, 'dr_uuid': dr_uuid, 'dm_uuid': dm_uuid, 'ds_uuid': ds_uuid}
         sqlC = composed_insert('training_prime', list(vin.keys()) + ['binary', 'binaryKeys', 'json'], schema = 'dt', returning = ['uuid'])
-        vjs = {'model' : str(model), 'optimizer' : str(optimizer), 'epochs' : epochs}
-        vbn = {'model' : model, 'model_state_dict': model.state_dict(),  'optimizer' : optimizer,
-                'optimizer_state_dict': optimizer.state_dict(), 'optimizerf' : optimizerf}
+        vjs = {'model': str(model), 'optimizer': str(optimizer), 'epochs': epochs}
+        vbn = {'model': model, 'model_state_dict': model.state_dict(),  'optimizer': optimizer,
+                'optimizer_state_dict': optimizer.state_dict(), 'optimizerf': optimizerf}
         vpg = [tuple(vin.values()) + (save_io(vbn).read(), list(vbn.keys()).sort(), json.dumps(vjs, sort_keys=True, default=str))]
 
         dt_uuid, = pg_execute(SQLconn, sqlC, vpg, commit = True)[0]
 
-        dbPackage = {'conn' : SQLconn, 'table' : dr_uuid, 'commit' : commit, \
-                    'values' : {'dt_uuid' : dt_uuid, 'epochs' : epochs} | vin}
+        dbPackage = {'conn': SQLconn, 'table': dr_uuid, 'commit': commit, \
+                    'values': {'dt_uuid': dt_uuid, 'epochs': epochs} | vin}
     history, dbFit = fit(model, epochs, trainDL, testDL, device, optimizer = optimizer, dbPackage = dbPackage)
 
     if commit:
@@ -147,8 +147,8 @@ for u in range(0,1):
         whereVal = [dt_uuid]
         col_dt = ['binary', 'binaryKeys', ['json', 'json', '$||$', '%s']]
         sqlC = composed_update('training_prime', col_dt, schema = 'dt', returning = ['uuid'], where = where)
-        vbn = {'model' : model, 'model_state_dict': model.state_dict(),  'optimizer' : optimizer,
-                'optimizer_state_dict': optimizer.state_dict(), 'optimizerf' : optimizerf}
+        vbn = {'model': model, 'model_state_dict': model.state_dict(),  'optimizer': optimizer,
+                'optimizer_state_dict': optimizer.state_dict(), 'optimizerf': optimizerf}
         ColumnLists = tuple(map(list, it.product(list(zip(*param_tuples(model)))[0], ['$double precision$'])))
         vpg = [save_io(vbn).read(), list(vbn.keys()).sort(), json.dumps(dbFit, sort_keys=True, default=str)]
 

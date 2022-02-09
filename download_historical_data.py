@@ -1,10 +1,10 @@
 from ib_insync import *
 from marksman_objects import *
-from datetime import datetime, timedelta, date
+from datetime import datetime
 # import numpy as np
 # import pandas as pd
 from marksman_ib_queries import *
-from postgresql_db import SQLconn, SQLengine, append_df_to_db, upsert_df_to_db, set_comment
+from postgresql_db import *
 import pytz
 
 
@@ -36,8 +36,8 @@ barSizes.reverse()
 FORCEuseRTH = False
 
 schema = 'trades'
-# uploader = lambda tableName, df : append_df_to_db(SQLengine, tableName, df) upsert_df_to_db(SQLengine, tableName, df, schema=schema),
-uploader = lambda tableName, df : [
+# uploader = lambda tableName, df: append_df_to_db(SQLengine, tableName, df) upsert_df_to_db(SQLengine, tableName, df, schema=schema),
+uploader = lambda tableName, df: [
                                     df_insert_prime(SQLconn, tableName, df, schema=schema),
                                     set_comment(SQLconn, tableName, datetime.now(), schema=schema),]
 # uploader = None

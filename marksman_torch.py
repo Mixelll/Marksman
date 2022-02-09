@@ -1,11 +1,10 @@
 import io
 import json
 import torch
-import numpy as np
-import itertools as it
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.utils.data as tud
+import torch.nn.functional as F
+from itertools import product
 from postgresql_db import SQLconn, SQLengine, composed_insert, composed_update, pg_execute
 
 
@@ -52,7 +51,7 @@ def param_tuples(model):
     return [(name[0] + name.split('.')[0].replace(name.split('.')[0].rstrip('0123456789'),'') + \
             '.' + ','.join(map(str,v)), p.data[v].item()) \
             for name,p in list(model.named_parameters()) \
-            for v in it.product(*[range(i) for i in p.shape])]
+            for v in product(*[range(i) for i in p.shape])]
 
 def evaluate(model, val_loader):
     """Evaluate the model's performance on the validation set"""
@@ -69,8 +68,8 @@ def fit(model, epochs, trainLoader, testLoader, device, loss_fn = None, optimize
             zip_param = list(zip(*param_tuples(model)))
             col_dr = list(v.keys()) + ['epoch', "optimizer","binary", "binaryKeys", "json"] + list(zip_param[0])
             sqlComposed = composed_insert(dbPackage['table'], col_dr, schema = 'dt', returning = ['uuid'])
-            vbn = {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'optimizer' : optimizer}
-            vjs = {'loss' : result['loss']}
+            vbn = {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'optimizer': optimizer}
+            vjs = {'loss': result['loss']}
             if metric_fn is not None: vjs['metric'] = metric
             val_dr = [tuple(v.values()) + (epoch, str(optimizer), save_io(vbn).read(), list(vbn.keys()).sort(), json.dumps(vjs)) + zip_param[1]]
             pg_execute(dbPackage['conn'], sqlComposed, val_dr, commit = True)
@@ -84,7 +83,7 @@ def fit(model, epochs, trainLoader, testLoader, device, loss_fn = None, optimize
             history.update([(x, [y]) for x, y in result.items()])
         else:
             history.update([(x, history[x] + [y]) for x, y in result.items()])
-        dbOut = {'loss' : result['loss']}
+        dbOut = {'loss': result['loss']}
 
     return history, dbOut
 
@@ -144,7 +143,7 @@ def test(model, dataLoader, device = get_default_device(), loss_fn = None, metri
     if metric_fn is not None:
         metric /= len(dataLoader.dataset)
         # print(f"Test Error: \n {metric('', '')}: {(metric):>0.1f}%, Avg loss: {loss:>8f} \n")
-        return {'loss' : loss, 'metric' : metric}
+        return {'loss': loss, 'metric': metric}
     else:
         # print(f"Test Error: \n Avg loss: {loss:>8f} \n")
-        return {'loss' : loss}
+        return {'loss': loss}

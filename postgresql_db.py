@@ -33,8 +33,10 @@ def pg_execute(conn, query, values=None, commit=True):
     # print(query.as_string(conn))
     print(cur.mogrify(query, values))
     cur.execute(query, values)
-    if commit: conn.commit()
-    if cur.description is not None: return cur.fetchall()
+    if commit:
+        conn.commit()
+    if cur.description is not None:
+        return cur.fetchall()
 
 
 def composed_parse(exp, enclose=False, parse=None):
@@ -49,19 +51,26 @@ def composed_parse(exp, enclose=False, parse=None):
             elif exp.strip('$ []()') == '%s':
                 e = exp.strip('$').split('%s')
                 returned = s(e[0]) + p + s(e[1])
-            else: raise ValueError('Expression: ' + exp.strip('$ []()') + ' not found in approved expressions')
+            else:
+                raise ValueError('Expression: ' + exp.strip('$ []()') + ' not found in approved expressions')
         elif exp.strip('$ []()') == '%s':
             e = exp.split('%s')
             returned = s(e[0]) + p + s(e[1])
-        else: returned =  n(exp.strip('$'))
-    elif isinstance(exp, dict): returned = composed_columns(filter(mbool, [k for k in exp.keys() if exp[k]]), enclose=enclose, parse=parse)
-    elif isinstance(exp, tuple): returned = composed_columns(filter(mbool, exp), enclose=enclose, parse=parse)
-    elif isinstance(exp, sql.Placeholder): returned = exp
+        else:
+            returned =  n(exp.strip('$'))
+    elif isinstance(exp, dict):
+        returned = composed_columns(filter(mbool, [k for k in exp.keys() if exp[k]]), enclose=enclose, parse=parse)
+    elif isinstance(exp, tuple):
+        returned = composed_columns(filter(mbool, exp), enclose=enclose, parse=parse)
+    elif isinstance(exp, sql.Placeholder):
+        returned = exp
     else:
         expPrev = exp[0]
         for x in exp[1:]:
-            if x == expPrev: raise ValueError("Something's funny going on - a pattern is repeated")
-            else: expPrev = x
+            if x == expPrev:
+                raise ValueError("Something's funny going on - a pattern is repeated")
+            else:
+                expPrev = x
 
         return sql.Composed([composed_parse(x, enclose) for x in filter(mbool, exp)])
 
@@ -76,10 +85,12 @@ def composed_insert(tbl, columns, schema=None, returning=None, conflict=None, no
         if nothing:
             comp += s('ON CONFLICT ({}) DO NOTHING').format(n(conflict))
         else:
-            if set is None: set = columns
+            if set is None:
+                set = columns
             comp += s('ON CONFLICT ({}) DO UPDATE').format(n(conflict)) + composed_set(set)
 
-    if returning is not None: comp += s(' RETURNING {}').format(composed_separated(returning))
+    if returning is not None:
+        comp += s(' RETURNING {}').format(composed_separated(returning))
 
     return comp
 
@@ -89,30 +100,35 @@ def composed_update(tbl, columns, returning=None, schema=None, where=None):
     comp = s('UPDATE {}').format(composed_dot(schema))
     comp += n(tbl) + composed_set(columns)
 
-    if where is not None: comp += s(' WHERE ' ) + composed_parse(where)
+    if where is not None:
+        comp += s(' WHERE ' ) + composed_parse(where)
 
-    if returning is not None: comp += s(' RETURNING {}').format(composed_separated(returning))
+    if returning is not None:
+        comp += s(' RETURNING {}').format(composed_separated(returning))
 
     return comp
 
 
 def composed_create(tbl, columns, schema=None, schema2=None, like=None, inherits=None, constraint=None):
     s, n, p = operators()
-    if schema2 is None : schema2 = schema
-    if isinstance(columns[0], str) : columns = [columns]
+    if schema2 is None: schema2 = schema
+    if isinstance(columns[0], str):
+        columns = [columns]
     schema2 = composed_dot(schema2)
     comp = s('CREATE TABLE {}{} (').format(composed_dot(schema), n(tbl))
     comp += composed_parse(columns, parse=composed_parse)
     if constraint:
-        if isinstance(constraint[0], str) : constraint = [constraint]
+        if isinstance(constraint[0], str): constraint = [constraint]
         comp += s(', ')
         for c in constraint[:-1]:
             comp += s(' CONSTRAINT ') + composed_parse(c, enclose=True) + s(',')
         comp += s(' CONSTRAINT ') + composed_parse(constraint[-1], enclose=True)
-    if like is not None: comp += s(',LIKE {}{}').format(schema2, n(like))
+    if like is not None:
+        comp += s(',LIKE {}{}').format(schema2, n(like))
     comp += s(') ')
 
-    if inherits is not None: comp += s('INHERITS ({}{})').format(schema2, n(inherits))
+    if inherits is not None:
+        comp += s('INHERITS ({}{})').format(schema2, n(inherits))
 
     return comp
 
@@ -122,8 +138,8 @@ def composed_select_from_table(tbl, columns=None, schema=None):
 
 
 def composed_from_join(join=None, tables=None, columns=None, using=None):
-    s = sql.SQL
-    n = lambda x : composed_separated(x, '.')
+    s, _, _ = operators()
+    def n(x): composed_separated(x, '.')
     joinc = []
     for v in multiply_iter(join, max(iter_length(tables, columns, using))):
         vj = '$'+v+'$' if v else v
@@ -141,13 +157,15 @@ def composed_from_join(join=None, tables=None, columns=None, using=None):
                 for j, c in enumerate(co):
                     comp += s('ON {} = {} ').format(n(c[0]), n(c[1]))
                     if j < len(co): comp += s('AND ')
-        else: comp += s('NATURAL ') + composed_parse([join, '$ JOIN $']) + s('{} ').format(n(table[i]))
+        else:
+            comp += s('NATURAL ') + composed_parse([join, '$ JOIN $']) + s('{} ').format(n(table[i]))
     elif columns:
         columns = list(columns)
         comp = s('FROM {} ').format(n(columns[0][:-1]))
         for i in range(1, len(columns)):
             comp += joinc[i-1] + s('{} ON {} = {} ').format(*map(n,[columns[i][:-1], columns[i-1], columns[i-1]]))
-    else: raise ValueError("Either tables or columns need to be given")
+    else:
+        raise ValueError("Either tables or columns need to be given")
 
     return comp
 
@@ -175,7 +193,7 @@ def composed_set(columns):
 
 
 def composed_between(start=None, end=None):
-    s = sql.SQL
+    s = operators()[0]
     comp = s('')
     execV = []
 
@@ -194,35 +212,45 @@ def composed_between(start=None, end=None):
 
 def composed_dot(name):
     s, n, _ = operators()
-    if not name: return s('')
-    else:
-        if not isinstance(name, str): return [composed_dot(x) for x in name]
+    if name:
+        if not isinstance(name, str):
+            return [composed_dot(x) for x in name]
         return s('{}.').format(n(name))
+    return s('')
+
 
 
 def composed_columns(columns, enclose=False, parse=None, **kwargs):
-    s = sql.SQL
-    if parse is None: parse = lambda x : composed_separated(x, '.',**kwargs)
-    if isinstance(columns, str): columns = [columns]
+    s = operators()[0]
+    if parse is None:
+        parse = lambda x: composed_separated(x, '.', **kwargs)
+    if isinstance(columns, str):
+        columns = [columns]
 
-    if columns is None: return s('*')
+    if columns is None:
+        return s('*')
     else:
         comp = s(', ').join(map(parse, columns))
-        if enclose: return s('(') + comp + s(')')
+        if enclose:
+            return s('(') + comp + s(')')
         return comp
 
 
 def composed_separated(names, sep=', ', AS=False, parse=None):
     s, n, _ = operators()
-    if not parse: parse = n
-    if isinstance(names, str): names = [names]
+    if not parse:
+        parse = n
+    if isinstance(names, str):
+        names = [names]
     names = list(filter(mbool, names))
 
     if sep in [',', '.', ', ', ' ', '    ']:
         comp = s(sep).join(map(parse, names))
-        if AS: comp += s(' ') + n(sep.join(names))
+        if AS:
+            comp += s(' ') + n(sep.join(names))
         return comp
-    else: raise ValueError('Expression: "' + sep + '" not found in approved separators')
+    else:
+        raise ValueError('Expression: "' + sep + '" not found in approved separators')
 
 
 def append_df_to_db(engine, tbl, df, schema=None, index=True):
@@ -233,9 +261,11 @@ def append_df_to_db(engine, tbl, df, schema=None, index=True):
     df.to_csv(output, sep='\t', header=False, index=index)
     output.seek(0)
 
-    if schema: cur.copy_from(output,  tbl, null="") # null values become ''
-    else: cur.copy_expert(sql.SQL("COPY {}.{} FROM STDIN DELIMITER '\t' CSV HEADER;") \
-        .format(sql.Identifier(schema), sql.Identifier(tbl)), output)
+    if schema:
+        cur.copy_from(output,  tbl, null="") # null values become ''
+    else:
+        cur.copy_expert(sql.SQL("COPY {}.{} FROM STDIN DELIMITER '\t' CSV HEADER;") \
+            .format(sql.Identifier(schema), sql.Identifier(tbl)), output)
     conn.commit()
 
 
@@ -259,18 +289,19 @@ def upsert_df_to_db(engine, tbl, df, schema=None, index=True):
 
 
 def get_tableNames(conn, names, operator='like', not_=False, relkind=('r', 'v'), case=False, schema=None, qualified=None):
-    s = sql.SQL
+    s = operators()[0]
     relkind = (relkind,) if isinstance(relkind, str) else tuple(relkind)
     c, names = composed_regex(operator, names, not_=not_, case=case)
     execV = [relkind, names]
     if schema:
         execV.append((schema,) if isinstance(schema, str) else tuple(schema))
         a = s('AND n.nspname IN %s')
-    else: a = s('')
+    else:
+        a = s('')
 
     cursor = conn.cursor()
     cursor.execute(s('SELECT {} FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE relkind IN %s AND relname {} %s {};') \
-        .format(composed_parse({'nspname' : qualified, 'relname' : True}), c, a), execV)
+        .format(composed_parse({'nspname': qualified, 'relname': True}), c, a), execV)
     if qualified:
         return cursor.fetchall()
     else:
@@ -285,20 +316,25 @@ def exmog(cursor, input):
 
 
 def composed_regex(operator, names, not_, case):
-    s = sql.SQL
+    s = operators()[0]
     if operator.lower() == 'like':
         c = s('LIKE') if case else s('ILIKE')
         c = s('NOT ')+c+s(' ALL') if not_ else c+s(' ANY')
-        if isinstance(names, str): names = [names]
+        if isinstance(names, str):
+            names = [names]
         names = (names,)
     elif operator.lower() == 'similar':
         c = s('NOT SIMILAR TO') if not_ else s('SIMILAR TO')
-        if not isinstance(names, str): names = '|'.join(names)
+        if not isinstance(names, str):
+            names = '|'.join(names)
     elif operator.lower() == 'posix':
         c = s('~')
-        if not case: c += s('*')
-        if not_: c = s('!') + c
-        if not isinstance(names, str): names = '|'.join(names)
+        if not case:
+            c += s('*')
+        if not_:
+            c = s('!') + c
+        if not isinstance(names, str):
+            names = '|'.join(names)
 
     return c, names
 

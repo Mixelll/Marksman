@@ -1,1 +1,6 @@
 connections.txt
+lol.py
+__pycache__/marksman_extras.cpython-39.pyc
+__pycache__/marksman_objects.cpython-39.pyc
+__pycache__/postgresql_db.cpython-39.pyc
+*.pyc
