@@ -23,6 +23,7 @@ from uuid import uuid4
 
 
 matplotlib.rcParams['figure.facecolor'] = '#ffffff'
+def dumps(j): return json.dumps(j, sort_keys=True, default=str)
 commit = True
 uploadDS = False
 ds_uuid = 'b43b553a-3427-4acb-ba54-a6178025cad5'# data set uuid
@@ -54,9 +55,10 @@ if ds_uuid:
     inputs, targets, inputNames, targetNames, tickers, columns = fetch_ds(SQLconn, ds_uuid)
 else:
     inputs, targets, inputNames, targetNames, ds_uuid = build_data(SQLconn, tickers, barSizesSamples, inputColumns, targetColumns, schema = 'trades',
-                                                                    startDate = startDate, endDate = endDate, UPLOAD = uploadDS)
+                                                                    startDate=startDate, endDate=endDate, UPLOAD=uploadDS)
 print(inputNames)
 print(targetNames)
+print(type(inputs))
 print(inputs.shape)
 # [print('{}: {}'.format(e,p)) for e,p in zip(inputNames, inputs[0])]
 
@@ -76,29 +78,23 @@ DS = tud.TensorDataset(inputs, targets)
 model = MultiLayerModel1(inputs.shape[-1], hiddenSizes, outSize)
 if not dm_uuid and commit:
     torchBinary = {'model': model}
-    col_dm = ['tickers', 'columns', 'index', 'text', 'binary', 'binaryKeys', 'ds_uuid']
-    sqlComposed = composed_insert('models_prime', col_dm, schema = 'dm', returning = ['uuid'])
-    val_dm = [(tickers, columns, index, str(torchBinary).replace('\n', ''), save_io(torchBinary).read(), list(torchBinary.keys()).sort(), ds_uuid)]
-    dm_uuid, = pg_execute(SQLconn, sqlComposed, val_dm, commit = True)[0]
+    col = ['tickers', 'columns', 'index', 'text', 'binary', 'binaryKeys', 'ds_uuid']
+    val = [(tickers, columns, index, str(torchBinary).replace('\n', ''), save_io(torchBinary).read(),
+            list(torchBinary.keys()).sort(), ds_uuid)]
+    cmp_insert = composed_insert('models_prime', col, schema='dm', returning=['uuid'])
+    dm_uuid, = pg_execute(SQLconn, cmp_insert, val, commit=True)[0]
 # Parameters = [p for p in list(model.named_parameters())]
 
 if commit:
-
-    col_dr = ['tickers', 'columns', 'index', 'dm_uuid', 'ds_uuid']
-    dr_uuid, = pg_execute(SQLconn, composed_insert('runs_prime', col_dr, schema = 'dr', returning = ['uuid']),
-                            [(tickers, columns, index, dm_uuid, ds_uuid)], commit = True)[0]
-
-    constraint = [[dr_uuid + '_pkey', '$PRIMARY KEY$', ('uuid',)],
-                    [dr_uuid + '_fkeyr', '$FOREIGN KEY$', ('dr_uuid',), '$REFERENCES$','dr','$.$','runs_prime', ('uuid',)],
-                    [dr_uuid + '_fkeym', '$FOREIGN KEY$', ('dm_uuid',), '$REFERENCES$', 'dm','$.$','models_prime', ('uuid',)]]
-    col = (['loss', '$double precision$'], ['epoch', '$double precision$', '$NOT NULL$'],
-                    ['epochs', '$double precision$'], ['optimizer', '$text$'],
-                    ['dt_uuid', '$uuid$', '$NOT NULL$', '$REFERENCES$', 'dt','$.$','training_prime', '$ON DELETE CASCADE$'])
-
+    col = ['tickers', 'columns', 'index', 'dm_uuid', 'ds_uuid']
+    val = [(tickers, columns, index, dm_uuid, ds_uuid)]
+    cmp_insert = composed_insert('runs_prime', col, schema='dr', returning=['uuid'])
+    dr_uuid, = pg_execute(SQLconn, cmp_insert, val, commit=True)[0]
+    col = (['dt_uuid', '$uuid$', '$NOT NULL$', '$REFERENCES$', 'dt','$.$','training_prime', '$ON DELETE CASCADE$'],)
     ColumnLists = tuple(map(list, it.product(list(zip(*param_tuples(model)))[0], ['$double precision$'])))
-
-    cmp_create = composed_create(dr_uuid,  col + ColumnLists, schema = 'dt', inherits = 'training_prime', constraint = constraint)
-    pg_execute(SQLconn, cmp_create,commit = True)
+    cmp_create = composed_create(dr_uuid,  col + ColumnLists, schema='dt', like='training_prime')
+    pg_execute(SQLconn, cmp_create, commit=True)
+    drStartDate = datetime.now()
 
 optimizerf = torch.optim.SGD
 optimizer = optimizerf(model.parameters(), 0.1)
@@ -109,50 +105,51 @@ for u in range(0,1):
     trainDL = tud.DataLoader(trainDS, batchSize, shuffle=True)
     testDL = tud.DataLoader(trainDS, batchSize, shuffle=True)
     device = get_default_device('cpu')
-    # trainDL = DeviceDataLoader(device, trainDS, batchSize, shuffle=True)
-    # print(inputs.mean())
-    # print(inputs.std())
-
-    # model.to(device = device).to(device = device)
     optimizerf = torch.optim.SGD
     lr = 0.0000003
     epochs = 1
     optimizer = optimizerf(model.parameters(), lr)
-    # print(model.state_dict())
-    # print(model)
-    # torch.save(model, r"C:\Users\user\Desktop\temp\lol.json")
-    # print(torch.load(r"C:\Users\user\Desktop\temp\lol.json"))
-    # epochs = 5
-    # lr = 30
-    # print(test(model, testDL, device = device))
-    # print('\nBEFORE:')
-    # print([p for p in model.parameters()])
-    # dbPackage = None
+
     if commit:
         vin = {'tickers': tickers, 'columns':  columns, 'index': index, 'dr_uuid': dr_uuid, 'dm_uuid': dm_uuid, 'ds_uuid': ds_uuid}
-        sqlC = composed_insert('training_prime', list(vin.keys()) + ['binary', 'binaryKeys', 'json'], schema = 'dt', returning = ['uuid'])
-        vjs = {'model': str(model), 'optimizer': str(optimizer), 'epochs': epochs}
-        vbn = {'model': model, 'model_state_dict': model.state_dict(),  'optimizer': optimizer,
+        col = list(vin.keys()) + ['binary', 'binaryKeys', 'json_hr', 'json']
+        dictJSONhr = {'epochs': epochs, 'testFrac' : testFrac}
+        dictJSON = {'model': str(model), 'optimizer': str(optimizer)} | dictJSONhr
+        vbn = {'model': model, 'model_state_dict': model.state_dict(), 'optimizer': optimizer,
                 'optimizer_state_dict': optimizer.state_dict(), 'optimizerf': optimizerf}
-        vpg = [tuple(vin.values()) + (save_io(vbn).read(), list(vbn.keys()).sort(), json.dumps(vjs, sort_keys=True, default=str))]
-
-        dt_uuid, = pg_execute(SQLconn, sqlC, vpg, commit = True)[0]
+        val = [tuple(vin.values()) + (save_io(vbn).read(), list(vbn.keys()).sort(), dumps(dictJSONhr), dumps(dictJSON))]
+        cmp_insert = composed_insert('training_prime', col, schema='dt', returning=['uuid'])
+        dt_uuid, = pg_execute(SQLconn, cmp_insert, val, commit=True)[0]
 
         dbPackage = {'conn': SQLconn, 'table': dr_uuid, 'commit': commit, \
                     'values': {'dt_uuid': dt_uuid, 'epochs': epochs} | vin}
-    history, dbFit = fit(model, epochs, trainDL, testDL, device, optimizer = optimizer, dbPackage = dbPackage)
+        dtStartDate = datetime.now()
+
+    history, fitDict = fit(model, epochs, trainDL, testDL, device, optimizer=optimizer, dbPackage=dbPackage)
 
     if commit:
-        where = ['uuid', '$=$', '%s']
-        whereVal = [dt_uuid]
-        col_dt = ['binary', 'binaryKeys', ['json', 'json', '$||$', '%s']]
-        sqlC = composed_update('training_prime', col_dt, schema = 'dt', returning = ['uuid'], where = where)
+        dtEndDate = datetime.now()
+
+        col = ['binary', 'binaryKeys', ['json_hr', 'json_hr', '$||$', '%s'], ['json', 'json', '$||$', '%s']]
         vbn = {'model': model, 'model_state_dict': model.state_dict(),  'optimizer': optimizer,
                 'optimizer_state_dict': optimizer.state_dict(), 'optimizerf': optimizerf}
         ColumnLists = tuple(map(list, it.product(list(zip(*param_tuples(model)))[0], ['$double precision$'])))
-        vpg = [save_io(vbn).read(), list(vbn.keys()).sort(), json.dumps(dbFit, sort_keys=True, default=str)]
+        dictJSONhr = fitDict | {'dt_time' : (dtEndDate - dtStartDate).total_seconds()}
+        val = [save_io(vbn).read(), list(vbn.keys()).sort(), dumps(dictJSONhr), dumps(dictJSONhr)]
+        whereVal = dt_uuid
+        where = ['uuid', '$=$', '%s']
+        cmp_update = composed_update('training_prime', col, schema='dt', returning=['uuid'], where=where)
+        pg_execute(SQLconn, cmp_update, val + [whereVal], commit=True)
 
-        pg_execute(SQLconn, sqlC, vpg + whereVal, commit = True)
+
+if commit:
+    drEndDate = datetime.now()
+    col = ['endDate']
+    val = [drEndDate]
+    whereVal = dr_uuid
+    where = ['uuid', '$=$', '%s']
+    cmp_update = composed_update('runs_prime', col, schema='dr', where=where)
+    pg_execute(SQLconn, cmp_update, val + [whereVal], commit=True)
     # print(out)
     # print('AFTER:')
     # print([p for p in model.named_parameters()])

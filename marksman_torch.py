@@ -61,21 +61,36 @@ def evaluate(model, val_loader):
 def fit(model, epochs, trainLoader, testLoader, device, loss_fn = None, optimizer = None, metric_fn = None, dbPackage = None):
     """Train the model using gradient descent"""
     history = None
+    time1 = datetime.now()
     result = test(model, testLoader, device = device, loss_fn = loss_fn, metric_fn = metric_fn)
-    for epoch in range(epochs):
-        if dbPackage is not None:
-            v = dbPackage['values']
-            zip_param = list(zip(*param_tuples(model)))
-            col_dr = list(v.keys()) + ['epoch', "optimizer","binary", "binaryKeys", "json"] + list(zip_param[0])
-            sqlComposed = composed_insert(dbPackage['table'], col_dr, schema = 'dt', returning = ['uuid'])
-            vbn = {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'optimizer': optimizer}
-            vjs = {'loss': result['loss']}
-            if metric_fn is not None: vjs['metric'] = metric
-            val_dr = [tuple(v.values()) + (epoch, str(optimizer), save_io(vbn).read(), list(vbn.keys()).sort(), json.dumps(vjs)) + zip_param[1]]
-            pg_execute(dbPackage['conn'], sqlComposed, val_dr, commit = True)
+    time2 = datetime.now()
+    dbOut = {str(k) + '_0':v for k,v in result.items()}
 
+    if dbPackage is not None:
+        v = dbPackage['values']
+        zip_param = list(zip(*param_tuples(model)))
+        col = list(v.keys()) + ["binary", "binaryKeys", "json_hr", "json"] + list(zip_param[0])
+        cmp_insert = composed_insert(dbPackage['table'], col, schema = 'dt', returning = ['uuid'])
+        vbn = {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'optimizer': optimizer}
+        vjshr = result | {'epoch': 0, 'epochs': epochs, 'epoch_time': datetime.now() - time2}
+        vjs = {'optimizer': optimizer} | vjshr
+        val = [tuple(v.values()) + (save_io(vbn).read(), list(vbn.keys()).sort(),
+                                    json.dumps(vjshr), json.dumps(vjs)) + zip_param[1]]
+        pg_execute(dbPackage['conn'], cmp_insert, val)
+
+    for epoch in range(epochs):
+        time3 = datetime.now()
         train(model, trainLoader, device = device, loss_fn = loss_fn, optimizer = optimizer)
         result = test(model, testLoader, device = device, loss_fn = loss_fn, metric_fn = metric_fn)
+
+        if dbPackage is not None:
+            zip_param = list(zip(*param_tuples(model)))
+            vbn = {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'optimizer': optimizer}
+            vjshr = result | {'epoch': 0, 'epochs': epochs, 'epoch_time': datetime.now() - time3}
+            vjs = {'optimizer': optimizer} | vjshr
+            val = [tuple(v.values()) + (save_io(vbn).read(), list(vbn.keys()).sort(),
+                                        json.dumps(vjshr), json.dumps(vjs)) + zip_param[1]]
+            pg_execute(dbPackage['conn'], cmp_insert, val)
 
         # model.epoch_end(epoch, result)
         if history is None:
@@ -83,7 +98,7 @@ def fit(model, epochs, trainLoader, testLoader, device, loss_fn = None, optimize
             history.update([(x, [y]) for x, y in result.items()])
         else:
             history.update([(x, history[x] + [y]) for x, y in result.items()])
-        dbOut = {'loss': result['loss']}
+        dbOut = dbOut | result
 
     return history, dbOut
 

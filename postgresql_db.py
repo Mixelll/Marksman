@@ -116,6 +116,8 @@ def composed_create(tbl, columns, schema=None, schema2=None, like=None, inherits
         columns = [columns]
     schema2 = composed_dot(schema2)
     comp = s('CREATE TABLE {}{} (').format(composed_dot(schema), n(tbl))
+    if like is not None:
+        comp += s('LIKE {}{} INCLUDING ALL,').format(schema2, n(like))
     comp += composed_parse(columns, parse=composed_parse)
     if constraint:
         if isinstance(constraint[0], str): constraint = [constraint]
@@ -123,8 +125,6 @@ def composed_create(tbl, columns, schema=None, schema2=None, like=None, inherits
         for c in constraint[:-1]:
             comp += s(' CONSTRAINT ') + composed_parse(c, enclose=True) + s(',')
         comp += s(' CONSTRAINT ') + composed_parse(constraint[-1], enclose=True)
-    if like is not None:
-        comp += s(',LIKE {}{}').format(schema2, n(like))
     comp += s(') ')
 
     if inherits is not None:
@@ -188,8 +188,11 @@ def composed_set(columns):
         else:
                 col.append(c)
                 val.append(p)
-
-    return s(' SET ({}) = ({})').format(composed_columns(col), composed_separated(val, parse=composed_parse))
+    if len(col)>1:
+        formatted = s(' SET ({}) = ({})')
+    else:
+        formatted = s(' SET {} = {}')
+    return formatted.format(composed_columns(col), composed_separated(val, parse=composed_parse))
 
 
 def composed_between(start=None, end=None):
