@@ -1,10 +1,11 @@
-from ib_insync import *
+from ib_insync import IB
 from marksman_objects import *
 from datetime import datetime
-# import numpy as np
-# import pandas as pd
-from marksman_ib_queries import *
-from postgresql_db import *
+
+import marksman_ib_queries
+import marksman_db as mdb
+
+import postgresql_db as db
 import pytz
 
 
@@ -14,11 +15,12 @@ ib.connect('127.0.0.1', 7497, clientId=1)
 # query from IB TWS and upload to DB:
 
 tickers = ['AMZN', 'AAPL']
-tickers = ['AAPL']
+tickers = ['AMZN']
 
 startDate = datetime(2021,10,8)
+startDate = datetime(2022,2,15)
 # startDate = pytz.timezone('America/New_York').localize(startDate)
-endDate = datetime(2021,11,12)
+endDate = ''
 # endDate = pytz.timezone('America/New_York').localize(endDate)
 # endDate = pytz.timezone('America/New_York').localize(endDate)
 
@@ -37,8 +39,8 @@ FORCEuseRTH = False
 
 schema = 'trades'
 # uploader = lambda tableName, df: append_df_to_db(SQLengine, tableName, df) upsert_df_to_db(SQLengine, tableName, df, schema=schema),
-uploader = lambda tableName, df: [
-                                    df_insert_prime(SQLconn, tableName, df, schema=schema),
-                                    set_comment(SQLconn, tableName, datetime.now(), schema=schema),]
+def uploader(tableName, df):
+    db.upsert_df_to_db(SQLengine, tableName, df, schema=schema)
+    dbm.df_insert_prime(SQLconn, df, tableName, schema + '_prime', schema=schema)
 # uploader = None
-ticker_historical_data_trades_populate_db(ib, tickers, barSizes, startDate, endDate, uploader, useRTH=FORCEuseRTH)
+marksman_ib_queries.ticker_historical_data_trades_populate_db(ib, tickers, barSizes, startDate, endDate, uploader, useRTH=FORCEuseRTH)

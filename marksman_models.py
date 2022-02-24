@@ -1,18 +1,15 @@
-import torch
-import torchvision
+import json
 import numpy as np
-import matplotlib
-import matplotlib.pyplot as plt
+import pandas as pd
+import torch
 import torch.nn as nn
+import torch.utils.data as tud
 import torch.nn.functional as F
-from torchvision.transforms import ToTensor
-from torchvision.utils import make_grid
-from torch.utils.data.dataloader import DataLoader
-from torch.utils.data import random_split
+
 
 
 class MultiLayerModel1(nn.Module):
-    """Feedfoward neural network with 1 hidden layer"""
+    """Feedfoward neural network with #len(hiddenSizes) number of hidden layer"""
     def __init__(self, inSize, hiddenSizes, outSize, dtype = None, loss = nn.MSELoss(), optimizer = torch.optim.SGD, bias = False):
         super().__init__()
         # hidden layers
@@ -21,7 +18,7 @@ class MultiLayerModel1(nn.Module):
         if any(hiddenSizes):
             inSizeH = inSize
             for i, l in enumerate(hiddenSizes):
-                setattr(self, 'hidden_linear'+str(i), nn.Linear(inSizeH, l, bias = bias))
+                setattr(self, 'hidden_linear' + str(i), nn.Linear(inSizeH, l, bias = bias))
                 inSizeH = l
             # output layer
             self.linear_out = nn.Linear(hiddenSizes[-1], outSize, dtype = dtype, bias = bias)

@@ -1,32 +1,116 @@
 import copy
-import types
+import json
 import numpy as np
 import pandas as pd
+
+from datetime import datetime, timedelta
+from math import log10, floor, ceil
 from pytz import timezone
 from tzlocal import get_localzone
-from math import log10, floor, ceil
-from datetime import timedelta as td
 
 
-def stat_dic(o, n, f):
+def df_freq_dict(df, index = 'date'):
+    freqs = ['20Y','10Y', '5Y', '3Y', 'Y', 'Q', 'M', 'W', '2D', 'D', '3H', 'H', '15m', '5m', '1m', '15s', '5s', '1s']
+    deltas = td_parser(freqs)
+    dfInd = df_return_ind_col(df, index)
+    splitter = df_create_freq_splitter(df, index)
 
-    np.array_split(o, n)
+    a = [abs(max(dfInd)-min(dfInd) - x) for x in deltas]
+    ind1 = a.index(min(a))
+    a = [abs(dfInd.to_series().diff().value_counts().index[0] - x) for x in deltas]
+    ind2 = a.index(min(a))
+    split = []
+    statDict = {}
+    # print(datetime.now())
+    for i in range(ind1+1,ind2-1):
+        print(freqs[i])
+        print(deltas[ind1]/deltas[i])
+        if deltas[ind1]/deltas[i] <= 5000:
+            split = splitter(freqs[i])
+        if split:
+            statDict = dict_merge(statDict, stat_dict(clean_split(split, index), index, arrayOp=lambda x: {freqs[i]: x}))
+
+    return statDict
+
+def clean_split(split, index=None, num = 0.6):
+    # print(split)
+    split_clean = [x for x in split if len(x)]
+
+    split_len = [len(x) for x in split_clean]
+    split_cleanest = []
+    keep = None
+    le_mean = sum(split_len) / len(split_len)
+    if num < 1:
+        num *= le_mean
+
+    for x in split_clean:
+        if keep is not None:
+            if len(split_cleanest):
+                dfIndK = df_return_ind_col(keep, index)
+                dfIndX = df_return_ind_col(x, index)
+                dfIndPrev = df_return_ind_col(split_clean[-1], index)
+                distanceXK = min(dfIndX) - max(dfIndK)
+                distanceKP = min(dfIndK) - max(dfIndPrev)
+                if distanceXK < distanceKP:
+                    x = pd.concat([keep, x])
+                else:
+                    split_cleanest[-1] = pd.concat([split_cleanest[-1], keep])
+            else:
+                x = pd.concat([keep, x])
+
+        if len(x) < num:
+            keep = x
+        else:
+            split_cleanest.append(x)
+            keep = None
+
+    # print([len(x) for x in split])
+    # print([len(x) for x in split_cleanest])
+    return split_cleanest
+
+def df_create_freq_splitter(df, index=None):
+    if index is None:
+        index = df.index.names[0]
+    if df_check_ind(df, index):
+        return lambda f: [i for _,i in df.groupby(pd.Grouper(level=index, freq=f))]
+    else:
+        return lambda f: [i for _,i in df.groupby(pd.Grouper(key=index, freq=f))]
 
 
 
-def stat_dic(df):
-    print(df.cov())
-    print(df.describe())
-    print(np.array_split(df,3))
-    return {'pandas.DataFrame.cov': df.cov().to_json(),
-            'pandas.DataFrame.describe': df.describe().to_json()}
+def stat_dict(dfArray, index=None, arrayOp = None):
+    if arrayOp:
+        def intervals(op): return arrayOp(df_interval_split_op(dfArray, op, index=index))
+    else:
+        def intervals(op): return df_interval_split_op(dfArray, op, index=index)
+
+    return {'pandas.DataFrame.cov':  intervals(lambda x: x.cov()),
+            'pandas.DataFrame.describe': intervals(lambda x: x.describe())}
+
+def df_interval_split_op(dfArray, op, index=None):
+    out = {}
+    for df in dfArray:
+        if len(df):
+            dfInd = df_return_ind_col(df, index)
+            out[pd.Interval(min(dfInd), max(dfInd))] = op(df)
+    return out
 
 
-def df_ind_col_op(df, column = None, op = min):
-    try:
-         return op(df[column])
-    except:
-         return op(df.index)
+def df_return_ind_col(df, index=None):
+    if df_check_ind(df, index):
+        return df.index
+    else:
+        return df[index]
+
+def df_check_ind(df, index):
+    if index in df.index.names:
+        return True
+    else:
+        try:
+            df[index]
+            return False
+        except:
+            raise ValueError(f'Name {index} not found in indices or column names')
 
 
 def iter2list(o):
@@ -37,6 +121,8 @@ def iter2list(o):
 
 
 def str2pd_interval(o, tz='America/New_York'):
+    if o[0] not in '([' or  o[-1] not in '])':
+        raise ValueError(f'Object {str(o)} of {str(type(o))} does not represent a pd.Interval')
     oo = o.split(',')
     def f(x): return to_timezone(pd.Timestamp(x), timezone(tz))
     return pd.Interval(f(oo[0][1:]), f(oo[1][:-1]))
@@ -49,6 +135,81 @@ def pd_interval2str(o):
         return oo[0] + str(o.left) + ',' + str(o.right) + oo[-1]
     return o
 
+def element_array_merge(a, b):
+    if not isinstance(a, list):
+        a = [a]
+    if not isinstance(b, list):
+        b = [b]
+
+    a.extend(b)
+    return a
+
+def dict_merge(a, b, m=0):
+    "merges b into a"
+    for key in b:
+        if key in a:
+            aD, bD = isinstance(a[key], dict), isinstance(b[key], dict)
+            if a[key] is None:
+                a[key] = b[key]
+            elif aD and bD:
+                dict_merge(a[key], b[key])
+            elif aD or bD:
+                if m // 10 == 0:
+                    if m % 10 == 0:
+                        a[key] = b[key]
+                    elif m % 10 == 1 and a[key] != b[key]:
+                            a[key] = element_array_merge(a[key], b[key])
+                    elif m % 10 == 2:
+                            a[key] = element_array_merge(a[key], b[key])
+                elif m // 10 == 1 and not aD and bD:
+                        a[key] = b[key]
+            else:
+                if m % 10 == 0:
+                    a[key] = b[key]
+                elif m % 10 == 1 and a[key] != b[key]:
+                        a[key] = element_array_merge(a[key], b[key])
+                elif m % 10 == 2:
+                        a[key] = element_array_merge(a[key], b[key])
+        else:
+            a[key] = b[key]
+    return a
+
+def object_captain_hook(o, default = [(str2pd_interval, pd.DataFrame.from_dict), str2pd_interval]):
+    if callable(default):
+        default = [default]
+
+    for d in default:
+        if callable(d) or len(d)==1:
+            if not callable(d):
+                d = d[0]
+            od = {}
+            for k,v in o.items():
+                k0 = k
+                try:
+                    k = d(k)
+                except:
+                    pass
+                try:
+                    v = d(v)
+                except:
+                    pass
+                try:
+                    od[k] = v
+                except:
+                    od[k0] = v
+        else:
+            od = {}
+            for k,v in o.items():
+                try:
+                    kd =  d[0](k)
+                    if kd:
+                        od[kd] = d[1](v)
+                    else:
+                        od[k] = v
+                except:
+                    od[k] = v
+        o = od
+    return od
 
 def iter_length(*args):
     out = []
@@ -133,11 +294,10 @@ def to_timezone(input, tz_in, naive=False):
     return out
 
 
-def epoch(timeQuants, timeQuantsVals, delta, **kwargs):
+def epoch(timeQuants, timeQuantsVals, delta, unit=None):
     timeQuants = [x for _, x in sorted(zip(timeQuantsVals, timeQuants), key=lambda pair: pair[0], reverse=True)]
     timeQuantsVals = sorted(timeQuantsVals, reverse=True)
-    unit = kwargs.get('unit', '')
-    fInd = timeQuants.index(unit) if isinstance(unit, str) and unit else -1
+    fInd = timeQuants.index(unit) if unit else -1
 
     if any(char.isdigit() for char in timeQuants[0]):
         a = [abs(x-delta) for x in timeQuantsVals]
@@ -153,23 +313,34 @@ def epoch(timeQuants, timeQuantsVals, delta, **kwargs):
 
 
 def td_parser(strList):
-    dic = {'Y': td(days=365), 'M': td(days=30), 'W': td(days=7), 'D': td(days=1), 'H': td(hours=1), 'S': td(seconds=1),
-        '1 secs': td(seconds=1), '5 secs': td(seconds=5), '10 secs': td(seconds=10), '15 secs':td(seconds=15),
-        '30 secs': td(seconds=30), '1 min': td(minutes=1), '2 mins': td(minutes=2), '3 mins': td(minutes=3),
-        '5 mins': td(minutes=5), '10 mins': td(minutes=10), '15 mins': td(minutes=15), '20 mins': td(minutes=20),
-        '30 mins': td(minutes=30), '1 hour': td(hours=1), '2 hours': td(hours=2), '3 hours': td(hours=3),
-        '4 hours': td(hours=4), '8 hours': td(hours=8), '1 day': td(days=1), '1 week': td(weeks=1), '1 month': td(days=30)}
+    td = timedelta
+    forms = [(('Y','y','year'), td(days=365)), (('Q','q','quarter'), td(days=90)), (('M','month'), td(days=30)),
+    (('W','w','week'), td(weeks=1)), (('D','d','day'), td(days=1)), (('H','h','hour'), td(hours=1)),
+    (('T','m','min','minute'), td(minutes=1)), (('S','s','sec','second'), td(seconds=1))]
+    def fi(s): return [dt for st,dt in forms if s in st][0]
     # dic = {k: v for k, v in sorted(dic.items(), key=lambda item: item[1], reverse=True)}
-    if isinstance(strList, list):
-        return [dic[st] for st in strList]
-    else:
-        return dic[strList]
+    out = []
+    strs = [strList] if isinstance(strList, str) else strList
+    for s in strs:
+        if len(s.lstrip('0123456789 .')) > 1:
+            s = s.rstrip('s')
+        try:
+            if any(c.isdigit() for c in s):
+                ss = s.lstrip('0123456789 .')
+                out.append(float(s.replace(ss,'')) * fi(ss))
+            else:
+                out.append(fi(s))
+        except:
+            raise ValueError(f'Name {s.lstrip("0123456789 .")} not found in time delta names') from None
+    if isinstance(strList, str):
+        return out[0]
+    return out
 
 
 def duration(delta, **kwargs):
     if isinstance(delta, str):
         return delta
-    timeQuants = ['Y','M','W','D','H','S']
+    timeQuants = ['Y','M','W','D','S']
     return epoch(timeQuants, td_parser(timeQuants), delta, **kwargs)
 
 

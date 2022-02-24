@@ -1,33 +1,39 @@
 import json
 import numpy as np
 import pandas as pd
-from postgresql_db import *
-from marksman_extras import *
-from itertools import product
-from marksman_objects import JamesonEncoder
 
-def df_insert_prime(conn, tblName, df, schema = None):
-    s, n, p = operators()
-    d = lambda o: df_ind_col_op(df, 'date', o)
-    primeName = schema + '_prime'
-    nf = {'name': tblName, 'ticker': tblName.split('_')[0], 'barSize': tblName.split('_')[1],
-                'columns': [], 'startDate': d(min), 'endDate': d(max),
-                'json': json.dumps('', cls=JamesonEncoder)} #df.index.names + list(df.columns.array)
+import postgresql_db as db
+
+from itertools import product
+from pytz import timezone
+
+from marksman_objects import JamesonEncoder, JacksonEncoder
+
+
+def df_insert_prime(conn, df, tblName, primeName,rangeNames=['startDate', 'endDate'], schema=None):
+    l = lambda x : pytz.timezone('America/New_York').localize(pd.Timestamp(x))
+
+
+    r = rangeNames
+    s, n, p = db.psg_operators()
+    dfInd = me.df_return_ind_col(df, 'date')
+    # prime table column names
+    execV = {'name': tblName, 'ticker': tblName.split('_')[0], 'barSize': tblName.split('_')[1],
+                'columns': [], 'startDate': min(dfInd), 'endDate': max(dfInd),
+                'json': json.dumps(me.df_freq_dict(df), cls=JamesonEncoder)}
+
     conflict = 'name'
-    print(df.cov())
-    # print(np.array_split(df,3))
-    # print(stat_dic(df))
-    # print(json.dumps(stat_dic(df)))
-    qn = ['startDate', 'endDate']
-    q = s(' SET {s} = least({s}, %s), {e} = greatest({e}, %s)').format(s=n(qn[0]), e=n(qn[1]))
-    set = [['startDate', '$least($', ([primeName, 'startDate'],), '$,$', '%s)'], ['endDate', '$greatest($', ([primeName, 'endDate'],), '$,$', '%s)']]
-    insert_prime = composed_insert(primeName, list(nf.keys()), schema=schema, conflict=conflict, set=set)
+    set = [[r[0], '$least($', ([primeName, r[0]],), '$,$', '%s)'],
+            [r[1], '$greatest($', ([primeName, r[1]],), '$,$', '%s)'],
+            ['json', ([primeName, 'json'],), '$||+$', '%s']]
+    setExecV = [execV[r[0]], execV[r[1]],  execV['json']]
+    insert_prime = db.composed_insert(primeName, list(execV.keys()), schema=schema, conflict=conflict, set=set)
     print(insert_prime)
-    pg_execute(conn, insert_prime, [tuple(nf.values()), nf[qn[0]], nf[qn[1]]])
+    db.pg_execute(conn, insert_prime, [tuple(execV.values())] + setExecV)
 
 
 def join_indexed_tables(conn, tableNames, columns, index, join=None,  schema=None, startDate=None, endDate=None):
-    s, n, p = operators()
+    s, n, p = db.psg_operators()
     if not isinstance(schema, list): schema = [schema]*len(tableNames)
 
     comp = s('SELECT {}.{}, {} ').format(n(tableNames[0]), n(index), composed_columns(product(tableNames, columns), AS=True))
@@ -39,9 +45,9 @@ def join_indexed_tables(conn, tableNames, columns, index, join=None,  schema=Non
 
 
 def fetch_ds(SQLconn, uuid):
-    s, n, p = operators()
-    tickers, columns = pg_execute(SQLconn, s("SELECT {},{} FROM ds.datasets_prime WHERE uuid = %s").format(n('tickers'), n('columns')), values = [uuid])[0]
-    df = get_table_as_df(SQLconn, uuid, schema = 'ds')
+    s, n, p = db.psg_operators()
+    tickers, columns = db.pg_execute(SQLconn, s("SELECT {},{} FROM ds.datasets_prime WHERE uuid = %s").format(n('tickers'), n('columns')), values = [uuid])[0]
+    df = db.get_table_as_df(SQLconn, uuid, schema = 'ds')
     columns = df.columns.tolist()
     print(columns)
     columns.remove('date')
@@ -60,7 +66,7 @@ def fetch_ds(SQLconn, uuid):
 def build_data(conn_or_engine, tickers, barSizesSamples, inputColumns, targetColumns,
                 schema=None, UPLOAD=False, order='F', startDate=None, endDate=None, **kwargs):
     barSizes = list(barSizesSamples.keys())
-    barSizes = [x for _, x in sorted(zip(td_parser(barSizes), barSizes), key=lambda pair: pair[0])]
+    barSizes = [x for _, x in sorted(zip(me.td_parser(barSizes), barSizes), key=lambda pair: pair[0])]
     table_names = lambda x: [e + '_' + x for e in tickers]
     columns = inputColumns[:]
 
@@ -125,9 +131,9 @@ def build_data(conn_or_engine, tickers, barSizesSamples, inputColumns, targetCol
         'targetColumns': targetColumns, 'startDate': startDate, 'endDate': endDate}
         df = pd.DataFrame(np.concatenate((input[min_i: ,:], target[min_i: ,:]), axis=1), columns = columnsAll)
         df.insert(0, 'date', pd.to_datetime(dfs[barSizes[0]].loc[min_i:,'date'].reset_index()['date'], utc = True)) # .map(lambda x: pd.to_datetime(x))
-        sqlComposed = composed_insert('datasets_prime', ["tickers","columns","index","startDate", "endDate", "json"], schema = 'ds', returning = ['uuid'])
-        uuid = pg_execute(SQLconn, sqlComposed, (tickers, columnsAll, 'date', df['date'].min(), df['date'].max(), json.dumps(toJSON, sort_keys=True, default=str)), commit = True)[0][0]
-        append_df_to_db(SQLengine, uuid, df, schema = 'ds')
+        sqlComposed = db.composed_insert('datasets_prime', ["tickers","columns","index","startDate", "endDate", "json"], schema = 'ds', returning = ['uuid'])
+        uuid = db.pg_execute(SQLconn, sqlComposed, (tickers, columnsAll, 'date', df['date'].min(), df['date'].max(), json.dumps(toJSON, sort_keys=True, default=str)), commit = True)[0][0]
+        db.append_df_to_db(SQLengine, uuid, df, schema = 'ds')
     else:
         uuid = None
     return input[min_i: ,:], target[min_i: ,:], inputColumnsBar, targetColumnsBar, uuid

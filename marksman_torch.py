@@ -1,11 +1,14 @@
 import io
 import json
+import numpy as np
+import pandas as pd
 import torch
-import torch.nn as nn
 import torch.utils.data as tud
-import torch.nn.functional as F
+
+import postgresql_db as db
+
+from datetime import datetime
 from itertools import product
-from postgresql_db import SQLconn, SQLengine, composed_insert, composed_update, pg_execute
 
 
 def get_default_device(device = 'cuda'):
@@ -60,6 +63,7 @@ def evaluate(model, val_loader):
 
 def fit(model, epochs, trainLoader, testLoader, device, loss_fn = None, optimizer = None, metric_fn = None, dbPackage = None):
     """Train the model using gradient descent"""
+    def dumps(j): return json.dumps(j, sort_keys=True, default=str)
     history = None
     time1 = datetime.now()
     result = test(model, testLoader, device = device, loss_fn = loss_fn, metric_fn = metric_fn)
@@ -70,27 +74,28 @@ def fit(model, epochs, trainLoader, testLoader, device, loss_fn = None, optimize
         v = dbPackage['values']
         zip_param = list(zip(*param_tuples(model)))
         col = list(v.keys()) + ["binary", "binaryKeys", "json_hr", "json"] + list(zip_param[0])
-        cmp_insert = composed_insert(dbPackage['table'], col, schema = 'dt', returning = ['uuid'])
-        vbn = {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'optimizer': optimizer}
-        vjshr = result | {'epoch': 0, 'epochs': epochs, 'epoch_time': datetime.now() - time2}
-        vjs = {'optimizer': optimizer} | vjshr
-        val = [tuple(v.values()) + (save_io(vbn).read(), list(vbn.keys()).sort(),
-                                    json.dumps(vjshr), json.dumps(vjs)) + zip_param[1]]
-        pg_execute(dbPackage['conn'], cmp_insert, val)
+        cmp_insert = db.composed_insert(dbPackage['table'], col, schema = 'dt', returning = ['uuid'])
+        bn = {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'optimizer': optimizer}
+        jshr = result | {'epoch': 0, 'epochs': epochs, 'epoch_time': (time2 - time2).total_seconds()}
+        js = {'optimizer': optimizer} | jshr
+        val = [tuple(v.values()) + (save_io(bn).read(), list(bn.keys()).sort(),
+                                    dumps(jshr), dumps(js)) + zip_param[1]]
+        db.pg_execute(dbPackage['conn'], cmp_insert, val)
 
     for epoch in range(epochs):
         time3 = datetime.now()
         train(model, trainLoader, device = device, loss_fn = loss_fn, optimizer = optimizer)
         result = test(model, testLoader, device = device, loss_fn = loss_fn, metric_fn = metric_fn)
+        time4 = datetime.now()
 
         if dbPackage is not None:
             zip_param = list(zip(*param_tuples(model)))
-            vbn = {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'optimizer': optimizer}
-            vjshr = result | {'epoch': 0, 'epochs': epochs, 'epoch_time': datetime.now() - time3}
-            vjs = {'optimizer': optimizer} | vjshr
-            val = [tuple(v.values()) + (save_io(vbn).read(), list(vbn.keys()).sort(),
-                                        json.dumps(vjshr), json.dumps(vjs)) + zip_param[1]]
-            pg_execute(dbPackage['conn'], cmp_insert, val)
+            bn = {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'optimizer': optimizer}
+            jshr = result | {'epoch': 0, 'epochs': epochs, 'epoch_time': (time4 - time3).total_seconds()}
+            js = {'optimizer': optimizer} | jshr
+            val = [tuple(v.values()) + (save_io(bn).read(), list(bn.keys()).sort(),
+                                        dumps(jshr), dumps(js)) + zip_param[1]]
+            db.pg_execute(dbPackage['conn'], cmp_insert, val)
 
         # model.epoch_end(epoch, result)
         if history is None:

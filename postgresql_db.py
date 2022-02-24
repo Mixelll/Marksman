@@ -1,13 +1,16 @@
 # from inspect import getmembers, isfunction, isclass
-import psycopg2 as psg
-from psycopg2 import sql
-import pandas as pd
-from sqlalchemy import create_engine
 import io
-from marksman_extras import *
-import uuid
-from datetime import datetime, timedelta, date
+import pandas as pd
+import psycopg2 as psg
 
+import marksman_extras as me
+
+from psycopg2 import sql
+from sqlalchemy import create_engine
+from uuid import uuid4
+
+
+# execute connection objects
 with open('connections.txt') as f:
     exec(f.read())
 SQLconn
@@ -16,7 +19,8 @@ SQLengine
 
 def get_table_as_df(connOrEngine, tbl, columns=None, schema=None, **kwargs):
     return query_get_df(connOrEngine, sql.SQL('SELECT {} FROM {}{}') \
-        .format(composed_columns(columns), composed_dot(schema), sql.Identifier(tbl)), **kwargs)
+        .format(composed_columns(columns), composed_dot(schema),
+                sql.Identifier(tbl)), **kwargs)
 
 
 def query_get_df(connOrEngine, query):
@@ -28,10 +32,17 @@ def query_get_df(connOrEngine, query):
         return pd.DataFrame(cur.fetchall())
 
 
-def pg_execute(conn, query, values=None, commit=True):
+def pg_execute(conn, query, values=None, commit=True, mogrify=False, as_string=False):
+    """Execute a psycopg2 composable, possibly containing a placeholder -
+    *sql.Placeholder* (``%s``) for the values.
+    Set *mogrify* or *as_string* True to print query.
+
+    """
     cur = conn.cursor()
-    # print(query.as_string(conn))
-    print(cur.mogrify(query, values))
+    if as_string:
+        print(query.as_string(conn))
+    if mogrify:
+        print(cur.mogrify(query, values))
     cur.execute(query, values)
     if commit:
         conn.commit()
@@ -40,46 +51,66 @@ def pg_execute(conn, query, values=None, commit=True):
 
 
 def composed_parse(exp, enclose=False, parse=None):
-    s, n, p = operators()
+    """Parse a nested container of strings by recursively pruning according
+    to the following rules:
+
+    - Enclose with ``$`` to parse the string raw into the quary,
+        only selected expressions are allowed.
+    - If exp is  ``%s`` or *sql.Placeholder* to parse into *sql.Placeholder*.
+    - If exp is a tuple it will be parsed by ``composed_columns``.
+    - If exp is a dict the keys will be parsed by ``composed_columns`` only if
+        exp[key] evaluates to True.
+    - Else (expecting an iterable) ``composed_parse`` will be applied to
+        each element in the iterable.
+
+    Specify enclose to pass to ``composed_columns``
+    """
+    s, n, p = psg_operators()
+    approvedExp = ['primary key', 'foreign key', 'references', 'default', 'uuid',
+                    'on delete restrict', 'unique', 'timestamp with time zone',
+                    'on delete cascade', 'current_timestamp','double precision',
+                    'not null', 'json', 'bytea', 'timestamp', 'like', 'and',
+                    'or', 'join', 'inner', 'left', 'right', 'full', '', '.', ',',
+                     '=', '||','++','||+', 'min', 'max', 'least', 'greatest']
     if isinstance(exp, str):
         if exp[0]=='$' and exp[-1]=='$':
-            if exp.strip('$ []()').lower() in ['primary key', 'foreign key', 'references', 'on delete cascade','on delete restrict',
-                                    'unique', 'not null', 'default', 'current_timestamp', 'timestamp with time zone', 'text',
-                                    'uuid', 'double precision', 'json', 'bytea', 'timestamp', 'like', 'and', 'or', 'join',
-                                    'inner', 'left', 'right', 'full', '','.', ',', '=', '||', '(', ')', 'min', 'max', 'least', 'greatest']:
+            if exp.strip('$ []()').lower() in approvedExp:
                 returned =  s(exp.strip('$'))
             elif exp.strip('$ []()') == '%s':
                 e = exp.strip('$').split('%s')
                 returned = s(e[0]) + p + s(e[1])
             else:
-                raise ValueError('Expression: ' + exp.strip('$ []()') + ' not found in approved expressions')
+                raise ValueError(f'Expression: {exp.strip("$ []()")} not found \
+                                in allowed expressions')
         elif exp.strip('$ []()') == '%s':
             e = exp.split('%s')
             returned = s(e[0]) + p + s(e[1])
         else:
             returned =  n(exp.strip('$'))
-    elif isinstance(exp, dict):
-        returned = composed_columns(filter(mbool, [k for k in exp.keys() if exp[k]]), enclose=enclose, parse=parse)
-    elif isinstance(exp, tuple):
-        returned = composed_columns(filter(mbool, exp), enclose=enclose, parse=parse)
     elif isinstance(exp, sql.Placeholder):
         returned = exp
+    elif isinstance(exp, tuple):
+        returned = composed_columns(filter(me.mbool, exp), enclose=enclose, parse=parse)
+    elif isinstance(exp, dict):
+        returned = composed_columns(filter(me.mbool, [k for k in exp.keys() if exp[k]]),
+                                    enclose=enclose, parse=parse)
     else:
         expPrev = exp[0]
         for x in exp[1:]:
             if x == expPrev:
-                raise ValueError("Something's funny going on - a pattern is repeated")
+                raise ValueError(f"Something's funny going on - {x,x} pattern is repeated ")
             else:
                 expPrev = x
 
-        return sql.Composed([composed_parse(x, enclose) for x in filter(mbool, exp)])
+        return sql.Composed([composed_parse(x, enclose) for x in filter(me.mbool, exp)])
 
     return s(' ') + returned + s(' ')
 
 
 def composed_insert(tbl, columns, schema=None, returning=None, conflict=None, nothing=False, set=None):
-    s, n, p = operators()
-    comp = s('INSERT INTO {}{} ({}) VALUES {} ').format(composed_dot(schema), n(tbl), composed_separated(columns), p)
+    s, n, p = psg_operators()
+    comp = s('INSERT INTO {}{} ({}) VALUES {} ').format(composed_dot(schema),
+            n(tbl), composed_separated(columns), p)
 
     if conflict:
         if nothing:
@@ -96,7 +127,7 @@ def composed_insert(tbl, columns, schema=None, returning=None, conflict=None, no
 
 
 def composed_update(tbl, columns, returning=None, schema=None, where=None):
-    s, n, p = operators()
+    s, n, p = psg_operators()
     comp = s('UPDATE {}').format(composed_dot(schema))
     comp += n(tbl) + composed_set(columns)
 
@@ -110,7 +141,7 @@ def composed_update(tbl, columns, returning=None, schema=None, where=None):
 
 
 def composed_create(tbl, columns, schema=None, schema2=None, like=None, inherits=None, constraint=None):
-    s, n, p = operators()
+    s, n, p = psg_operators()
     if schema2 is None: schema2 = schema
     if isinstance(columns[0], str):
         columns = [columns]
@@ -134,11 +165,12 @@ def composed_create(tbl, columns, schema=None, schema2=None, like=None, inherits
 
 
 def composed_select_from_table(tbl, columns=None, schema=None):
-    return sql.SQL('SELECT {} FROM {}{} ').format(composed_columns(columns), composed_dot(schema), sql.Identifier(tbl))
+    return sql.SQL('SELECT {} FROM {}{} ').format(composed_columns(columns),
+                    composed_dot(schema), sql.Identifier(tbl))
 
 
 def composed_from_join(join=None, tables=None, columns=None, using=None):
-    s, _, _ = operators()
+    s, _, _ = psg_operators()
     def n(x): composed_separated(x, '.')
     joinc = []
     for v in multiply_iter(join, max(iter_length(tables, columns, using))):
@@ -171,7 +203,7 @@ def composed_from_join(join=None, tables=None, columns=None, using=None):
 
 
 def composed_set(columns):
-    s, n, p = operators()
+    s, n, p = psg_operators()
     if not columns:
         return s('')
 
@@ -196,7 +228,7 @@ def composed_set(columns):
 
 
 def composed_between(start=None, end=None):
-    s = operators()[0]
+    s = psg_operators()[0]
     comp = s('')
     execV = []
 
@@ -214,7 +246,7 @@ def composed_between(start=None, end=None):
 
 
 def composed_dot(name):
-    s, n, _ = operators()
+    s, n, _ = psg_operators()
     if name:
         if not isinstance(name, str):
             return [composed_dot(x) for x in name]
@@ -224,7 +256,7 @@ def composed_dot(name):
 
 
 def composed_columns(columns, enclose=False, parse=None, **kwargs):
-    s = operators()[0]
+    s = psg_operators()[0]
     if parse is None:
         parse = lambda x: composed_separated(x, '.', **kwargs)
     if isinstance(columns, str):
@@ -240,12 +272,12 @@ def composed_columns(columns, enclose=False, parse=None, **kwargs):
 
 
 def composed_separated(names, sep=', ', AS=False, parse=None):
-    s, n, _ = operators()
+    s, n, _ = psg_operators()
     if not parse:
         parse = n
     if isinstance(names, str):
         names = [names]
-    names = list(filter(mbool, names))
+    names = list(filter(me.mbool, names))
 
     if sep in [',', '.', ', ', ' ', '    ']:
         comp = s(sep).join(map(parse, names))
@@ -253,7 +285,7 @@ def composed_separated(names, sep=', ', AS=False, parse=None):
             comp += s(' ') + n(sep.join(names))
         return comp
     else:
-        raise ValueError('Expression: "' + sep + '" not found in approved separators')
+        raise ValueError(f'Expression: "{sep}" not found in approved separators')
 
 
 def append_df_to_db(engine, tbl, df, schema=None, index=True):
@@ -273,7 +305,7 @@ def append_df_to_db(engine, tbl, df, schema=None, index=True):
 
 
 def upsert_df_to_db(engine, tbl, df, schema=None, index=True):
-    s, n, _ = operators()
+    s, n, _ = psg_operators()
     conn = engine.raw_connection()
     df.head(0).to_sql(tbl, engine, if_exists='replace', index=index, schema=schema)
     cur = conn.cursor()
@@ -281,7 +313,7 @@ def upsert_df_to_db(engine, tbl, df, schema=None, index=True):
     df.to_csv(output, sep='\t', header=False, index=index)
     output.seek(0)
 
-    temp, schema, tbl = n(tbl + '_' + str(uuid.uuid4())[:8]), composed_dot(schema), n(tbl)
+    temp, schema, tbl = n(tbl + '_' + str(uuid4())[:8]), composed_dot(schema), n(tbl)
     cur.execute(s('CREATE TEMP TABLE {} (LIKE {}{} INCLUDING ALL);').format(temp, schema, tbl))
     cur.copy_expert(s("COPY {} FROM STDIN DELIMITER '\t' CSV HEADER;").format(temp), output)
     cur.execute(s('DELETE FROM {}{} WHERE ({index}) IN (SELECT {index} FROM {});')
@@ -291,8 +323,9 @@ def upsert_df_to_db(engine, tbl, df, schema=None, index=True):
     conn.commit()
 
 
-def get_tableNames(conn, names, operator='like', not_=False, relkind=('r', 'v'), case=False, schema=None, qualified=None):
-    s = operators()[0]
+def get_tableNames(conn, names, operator='like', not_=False, relkind=('r', 'v'),
+                    case=False, schema=None, qualified=None):
+    s = psg_operators()[0]
     relkind = (relkind,) if isinstance(relkind, str) else tuple(relkind)
     c, names = composed_regex(operator, names, not_=not_, case=case)
     execV = [relkind, names]
@@ -303,7 +336,8 @@ def get_tableNames(conn, names, operator='like', not_=False, relkind=('r', 'v'),
         a = s('')
 
     cursor = conn.cursor()
-    cursor.execute(s('SELECT {} FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE relkind IN %s AND relname {} %s {};') \
+    cursor.execute(s('SELECT {} FROM pg_class c JOIN pg_namespace n ON \
+                    n.oid = c.relnamespace WHERE relkind IN %s AND relname {} %s {};') \
         .format(composed_parse({'nspname': qualified, 'relname': True}), c, a), execV)
     if qualified:
         return cursor.fetchall()
@@ -319,7 +353,7 @@ def exmog(cursor, input):
 
 
 def composed_regex(operator, names, not_, case):
-    s = operators()[0]
+    s = psg_operators()[0]
     if operator.lower() == 'like':
         c = s('LIKE') if case else s('ILIKE')
         c = s('NOT ')+c+s(' ALL') if not_ else c+s(' ANY')
@@ -346,7 +380,7 @@ def table_exists(conn, name):
     exists = False
     try:
         cur = conn.cursor()
-        cur.execute("select exists(select relname from pg_class where relname='" + name + "')")
+        cur.execute(f"select exists(select relname from pg_class where relname='{name}')")
         exists = cur.fetchone()[0]
         cur.close()
     except psg.Error as e:
@@ -359,7 +393,7 @@ def get_table_colNames(conn, name):
     colNames = []
     try:
         cur = conn.cursor()
-        cur.execute("select * from " + name + " LIMIT 0")
+        cur.execute(f'select * from {name} LIMIT 0')
         for desc in cur.description:
             colNames.append(desc[0])
         cur.close()
@@ -370,11 +404,11 @@ def get_table_colNames(conn, name):
 
 
 def set_comment(conn, tbl, comment, schema=None):
-    s, n, _ = operators()
+    s, n, _ = psg_operators()
     schema = composed_dot(schema)
 
     return pg_execute(conn, s('COMMENT ON TABLE {}{} IS %s').format(schema, n(tbl)), values=[str(comment)])
 
 
-def operators():
+def psg_operators():
     return sql.SQL, sql.Identifier, sql.Placeholder()
