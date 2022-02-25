@@ -13,7 +13,6 @@ from itertools import product
 
 def get_default_device(device = 'cuda'):
     """Pick GPU if available, else CPU"""
-
     if (device.lower() == 'cuda' or device.lower() == 'gpu') and torch.cuda.is_available():
         return torch.device('cuda')
     else:
@@ -51,7 +50,8 @@ class DeviceDataLoader(tud.DataLoader):
 
 
 def param_tuples(model):
-    return [(name[0] + name.split('.')[0].replace(name.split('.')[0].rstrip('0123456789'),'') + \
+    return [(name[0] + \
+            name.split('.')[0].replace(name.split('.')[0].rstrip('0123456789'),'') + \
             '.' + ','.join(map(str,v)), p.data[v].item()) \
             for name,p in list(model.named_parameters()) \
             for v in product(*[range(i) for i in p.shape])]
@@ -61,41 +61,41 @@ def evaluate(model, val_loader):
     outputs = [model.validation_step(batch) for batch in val_loader]
     return model.validation_epoch_end(outputs)
 
-def fit(model, epochs, trainLoader, testLoader, device, loss_fn = None, optimizer = None, metric_fn = None, dbPackage = None):
+def fit(model, epochs, trainLoader, testLoader, device, loss_fn=None,
+        optimizer=None, metric_fn=None, dbPackage=None):
     """Train the model using gradient descent"""
     def dumps(j): return json.dumps(j, sort_keys=True, default=str)
     history = None
     time1 = datetime.now()
-    result = test(model, testLoader, device = device, loss_fn = loss_fn, metric_fn = metric_fn)
+    result = test(model, testLoader, device=device, loss_fn=loss_fn, metric_fn=metric_fn)
     time2 = datetime.now()
     dbOut = {str(k) + '_0':v for k,v in result.items()}
 
     if dbPackage is not None:
         v = dbPackage['values']
-        zip_param = list(zip(*param_tuples(model)))
-        col = list(v.keys()) + ["binary", "binaryKeys", "json_hr", "json"] + list(zip_param[0])
-        cmp_insert = db.composed_insert(dbPackage['table'], col, schema = 'dt', returning = ['uuid'])
-        bn = {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'optimizer': optimizer}
-        jshr = result | {'epoch': 0, 'epochs': epochs, 'epoch_time': (time2 - time2).total_seconds()}
-        js = {'optimizer': optimizer} | jshr
-        val = [tuple(v.values()) + (save_io(bn).read(), list(bn.keys()).sort(),
-                                    dumps(jshr), dumps(js)) + zip_param[1]]
-        db.pg_execute(dbPackage['conn'], cmp_insert, val)
-
-    for epoch in range(epochs):
-        time3 = datetime.now()
-        train(model, trainLoader, device = device, loss_fn = loss_fn, optimizer = optimizer)
-        result = test(model, testLoader, device = device, loss_fn = loss_fn, metric_fn = metric_fn)
-        time4 = datetime.now()
-
-        if dbPackage is not None:
+        def upload(model, optimizer, epoch, t2, t1):
             zip_param = list(zip(*param_tuples(model)))
-            bn = {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'optimizer': optimizer}
-            jshr = result | {'epoch': 0, 'epochs': epochs, 'epoch_time': (time4 - time3).total_seconds()}
+            col = list(v.keys()) + ["binary", "binaryKeys", "json_hr", "json"] + list(zip_param[0])
+            cmp_insert = db.composed_insert(dbPackage['table'], col, schema = 'dt',
+                                            returning = ['uuid'])
+            bn = {'model_state_dict': model.state_dict(), 'optimizer': optimizer
+                    'optimizer_state_dict': optimizer.state_dict()}
+            jshr = result | {'epoch': 0, 'epochs': epochs,
+                            'epoch_time': (t2 - t1).total_seconds()}
             js = {'optimizer': optimizer} | jshr
             val = [tuple(v.values()) + (save_io(bn).read(), list(bn.keys()).sort(),
                                         dumps(jshr), dumps(js)) + zip_param[1]]
             db.pg_execute(dbPackage['conn'], cmp_insert, val)
+        upload(model, optimizer, 0, time2, time1)
+
+    for epoch in range(epochs):
+        time3 = datetime.now()
+        train(model, trainLoader, device=device, loss_fn=loss_fn, optimizer=optimizer)
+        result = test(model, testLoader, device=device, loss_fn=loss_fn, metric_fn=metric_fn)
+        time4 = datetime.now()
+
+        if dbPackage is not None:
+            upload(model, optimizer, epoch, time2, time1)
 
         # model.epoch_end(epoch, result)
         if history is None:
@@ -107,7 +107,8 @@ def fit(model, epochs, trainLoader, testLoader, device, loss_fn = None, optimize
 
     return history, dbOut
 
-def train(model, dataLoader, device = get_default_device(), loss_fn = None, optimizer = None, batchDisp = 500):
+def train(model, dataLoader, device=get_default_device(), loss_fn=None,
+            optimizer=None, batchDisp=500):
     """Train the model using gradient descent"""
     if loss_fn is None:
         loss_fn = model.loss
@@ -140,7 +141,7 @@ def train(model, dataLoader, device = get_default_device(), loss_fn = None, opti
         #         print([p.grad for p in model.parameters()])
         #         print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
 
-def test(model, dataLoader, device = get_default_device(), loss_fn = None, metric_fn = None):
+def test(model, dataLoader, device=get_default_device(), loss_fn=None, metric_fn=None):
     if loss_fn is None:
         loss_fn = model.loss
     if metric_fn is None and hasattr(model, 'metric'):

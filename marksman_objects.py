@@ -8,6 +8,7 @@ import marksman_extras as me
 
 from typing import NamedTuple
 
+
 class Ticker(NamedTuple):
     symbol: str
     exchange: str = 'SMART'
@@ -91,8 +92,10 @@ class JamesonSuper:
 class JamesonEncoder(JamesonSuper, json.JSONEncoder):
 
     def set_default(self, default=[[me.pd_interval2str, lambda o: isinstance(o, pd.Interval)],
-                                    [lambda o: o.to_dict(), lambda o: re.search("'.*'", str(type(o))).group().replace("'", '') in ('pandas.core.frame.DataFrame')],
-                                    me.iter2list]):
+        [lambda o: o.to_dict(),
+            lambda o: re.search("'.*'", str(type(o))).group().replace("'", '') \
+            in ('pandas.core.frame.DataFrame')],
+        me.iter2list]):
         super().set_default(default)
 
     def default(self, o):

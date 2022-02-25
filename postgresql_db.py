@@ -140,7 +140,8 @@ def composed_update(tbl, columns, returning=None, schema=None, where=None):
     return comp
 
 
-def composed_create(tbl, columns, schema=None, schema2=None, like=None, inherits=None, constraint=None):
+def composed_create(tbl, columns, schema=None, schema2=None, like=None,
+                    inherits=None, constraint=None):
     s, n, p = psg_operators()
     if schema2 is None: schema2 = schema
     if isinstance(columns[0], str):
@@ -190,12 +191,14 @@ def composed_from_join(join=None, tables=None, columns=None, using=None):
                     comp += s('ON {} = {} ').format(n(c[0]), n(c[1]))
                     if j < len(co): comp += s('AND ')
         else:
-            comp += s('NATURAL ') + composed_parse([join, '$ JOIN $']) + s('{} ').format(n(table[i]))
+            comp += s('NATURAL ') + composed_parse([join, '$ JOIN $']) + \
+                    s('{} ').format(n(table[i]))
     elif columns:
         columns = list(columns)
         comp = s('FROM {} ').format(n(columns[0][:-1]))
         for i in range(1, len(columns)):
-            comp += joinc[i-1] + s('{} ON {} = {} ').format(*map(n,[columns[i][:-1], columns[i-1], columns[i-1]]))
+            toMap = columns[i][:-1], columns[i-1], columns[i-1]
+            comp += joinc[i-1] + s('{} ON {} = {} ').format(*map(n, toMap))
     else:
         raise ValueError("Either tables or columns need to be given")
 
@@ -224,7 +227,8 @@ def composed_set(columns):
         formatted = s(' SET ({}) = ({})')
     else:
         formatted = s(' SET {} = {}')
-    return formatted.format(composed_columns(col), composed_separated(val, parse=composed_parse))
+    return formatted.format(composed_columns(col),
+                            composed_separated(val, parse=composed_parse))
 
 
 def composed_between(start=None, end=None):
@@ -406,8 +410,8 @@ def get_table_colNames(conn, name):
 def set_comment(conn, tbl, comment, schema=None):
     s, n, _ = psg_operators()
     schema = composed_dot(schema)
-
-    return pg_execute(conn, s('COMMENT ON TABLE {}{} IS %s').format(schema, n(tbl)), values=[str(comment)])
+    query = s('COMMENT ON TABLE {}{} IS %s').format(schema, n(tbl))
+    return pg_execute(conn, query, values=[str(comment)])
 
 
 def psg_operators():

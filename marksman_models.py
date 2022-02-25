@@ -10,7 +10,9 @@ import torch.nn.functional as F
 
 class MultiLayerModel1(nn.Module):
     """Feedfoward neural network with #len(hiddenSizes) number of hidden layer"""
-    def __init__(self, inSize, hiddenSizes, outSize, dtype = None, loss = nn.MSELoss(), optimizer = torch.optim.SGD, bias = False):
+
+    def __init__(self, inSize, hiddenSizes, outSize, dtype=None,
+                    loss=nn.MSELoss(), optimizer=torch.optim.SGD, bias=False):
         super().__init__()
         # hidden layers
         self.hiddenSizes = hiddenSizes
@@ -18,16 +20,17 @@ class MultiLayerModel1(nn.Module):
         if any(hiddenSizes):
             inSizeH = inSize
             for i, l in enumerate(hiddenSizes):
-                setattr(self, 'hidden_linear' + str(i), nn.Linear(inSizeH, l, bias = bias))
+                setattr(self, 'hidden_linear' + str(i), nn.Linear(inSizeH, l, bias=bias))
                 inSizeH = l
             # output layer
-            self.linear_out = nn.Linear(hiddenSizes[-1], outSize, dtype = dtype, bias = bias)
+            self.linear_out = nn.Linear(hiddenSizes[-1], outSize, dtype=dtype, bias=bias)
         else:
-            self.linear_out = nn.Linear(inSize, outSize, dtype = dtype, bias = bias)
+            self.linear_out = nn.Linear(inSize, outSize, dtype=dtype, bias=bias)
         self.loss = loss
         self.optimizer = optimizer
 
     def forward(self, xb):
+
         # Get intermediate outputs using hidden layer
         out = xb
         for i,_ in enumerate(self.hiddenSizes):
@@ -57,4 +60,4 @@ class MultiLayerModel1(nn.Module):
         return {'val_loss': epoch_loss.item(), 'val_acc': epoch_acc.item()}
 
     def epoch_end(self, epoch, result):
-        print("Epoch [{}], val_loss: {:.4f}, val_acc: {:.4f}".format(epoch, result['val_loss'], result['val_acc']))
+        print(f"Epoch [{epoch}], val_loss: {result['val_loss']:.4f}, val_acc: {result['val_acc']:.4f}")

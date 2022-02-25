@@ -10,7 +10,8 @@ from tzlocal import get_localzone
 
 
 def df_freq_dict(df, index = 'date'):
-    freqs = ['20Y','10Y', '5Y', '3Y', 'Y', 'Q', 'M', 'W', '2D', 'D', '3H', 'H', '15m', '5m', '1m', '15s', '5s', '1s']
+    freqs = ['20Y','10Y', '5Y', '3Y', 'Y', 'Q', 'M', 'W', '2D', 'D', '3H', 'H',
+            '15m', '5m', '1m', '15s', '5s', '1s']
     deltas = td_parser(freqs)
     dfInd = df_return_ind_col(df, index)
     splitter = df_create_freq_splitter(df, index)
@@ -28,7 +29,8 @@ def df_freq_dict(df, index = 'date'):
         if deltas[ind1]/deltas[i] <= 5000:
             split = splitter(freqs[i])
         if split:
-            statDict = dict_merge(statDict, stat_dict(clean_split(split, index), index, arrayOp=lambda x: {freqs[i]: x}))
+            statDict = dict_merge(statDict, stat_dict(clean_split(split, index),
+                                    index, arrayOp=lambda x: {freqs[i]: x}))
 
     return statDict
 
@@ -122,7 +124,8 @@ def iter2list(o):
 
 def str2pd_interval(o, tz='America/New_York'):
     if o[0] not in '([' or  o[-1] not in '])':
-        raise ValueError(f'Object {str(o)} of {str(type(o))} does not represent a pd.Interval')
+        raise ValueError(f'Object {str(o)} of {str(type(o))} does not represent \
+                        a pd.Interval')
     oo = o.split(',')
     def f(x): return to_timezone(pd.Timestamp(x), timezone(tz))
     return pd.Interval(f(oo[0][1:]), f(oo[1][:-1]))
@@ -174,7 +177,8 @@ def dict_merge(a, b, m=0):
             a[key] = b[key]
     return a
 
-def object_captain_hook(o, default = [(str2pd_interval, pd.DataFrame.from_dict), str2pd_interval]):
+def object_captain_hook(o, default = [(str2pd_interval, pd.DataFrame.from_dict),
+                        str2pd_interval]):
     if callable(default):
         default = [default]
 
@@ -271,7 +275,8 @@ def to_timezone(input, tz_in, naive=False):
         try:
             if input.dt.tz == None:
                 out = input.dt.tz_localize(str(get_localzone()), ambiguous='infer',
-                                            nonexistent='shift_backward').dt.tz_convert(str(tz_in))
+                                            nonexistent='shift_backward').dt \
+                                            .tz_convert(str(tz_in))
             else:
                 out = input.dt.tz_convert(tz_in)
             if naive:
@@ -279,7 +284,8 @@ def to_timezone(input, tz_in, naive=False):
         except:
             if input.tz == None:
                 out = input.tz_localize(str(get_localzone()), ambiguous='infer',
-                                        nonexistent='shift_backward').tz_convert(str(tz_in))
+                                        nonexistent='shift_backward') \
+                                        .tz_convert(str(tz_in))
             else:
                 out = input.tz_convert(tz_in)
             if naive:
@@ -295,7 +301,8 @@ def to_timezone(input, tz_in, naive=False):
 
 
 def epoch(timeQuants, timeQuantsVals, delta, unit=None):
-    timeQuants = [x for _, x in sorted(zip(timeQuantsVals, timeQuants), key=lambda pair: pair[0], reverse=True)]
+    timeQuants = [x for _, x in sorted(zip(timeQuantsVals, timeQuants),
+                    key=lambda pair: pair[0], reverse=True)]
     timeQuantsVals = sorted(timeQuantsVals, reverse=True)
     fInd = timeQuants.index(unit) if unit else -1
 
@@ -314,9 +321,11 @@ def epoch(timeQuants, timeQuantsVals, delta, unit=None):
 
 def td_parser(strList):
     td = timedelta
-    forms = [(('Y','y','year'), td(days=365)), (('Q','q','quarter'), td(days=90)), (('M','month'), td(days=30)),
-    (('W','w','week'), td(weeks=1)), (('D','d','day'), td(days=1)), (('H','h','hour'), td(hours=1)),
-    (('T','m','min','minute'), td(minutes=1)), (('S','s','sec','second'), td(seconds=1))]
+    forms = [(('Y','y','year'), td(days=365)), (('Q','q','quarter'), td(days=90)),
+            (('M','month'), td(days=30)), (('W','w','week'), td(weeks=1)),
+            (('D','d','day'), td(days=1)), (('H','h','hour'), td(hours=1)),
+            (('T','m','min','minute'), td(minutes=1)),
+            (('S','s','sec','second'), td(seconds=1))]
     def fi(s): return [dt for st,dt in forms if s in st][0]
     # dic = {k: v for k, v in sorted(dic.items(), key=lambda item: item[1], reverse=True)}
     out = []
@@ -331,7 +340,8 @@ def td_parser(strList):
             else:
                 out.append(fi(s))
         except:
-            raise ValueError(f'Name {s.lstrip("0123456789 .")} not found in time delta names') from None
+            err = f'Name {s.lstrip("0123456789 .")} not found intime delta names'
+            raise ValueError(err) from None
     if isinstance(strList, str):
         return out[0]
     return out
@@ -345,9 +355,10 @@ def duration(delta, **kwargs):
 
 
 def bars_size(delta, **kwargs):
-    timeQuants = ['1 secs', '5 secs', '10 secs', '15 secs', '30 secs', '1 min', '2 mins',
-                '3 mins', '5 mins', '10 mins', '15 mins', '20 mins', '30 mins', '1 hour', '2 hours',
-                '3 hours', '4 hours', '8 hours','1 day', '1 week', '1 month']
+    timeQuants = ['1 secs', '5 secs', '10 secs', '15 secs', '30 secs', '1 min',
+                    '2 mins', '3 mins', '5 mins', '10 mins', '15 mins', '20 mins',
+                    '30 mins', '1 hour', '2 hours', '3 hours', '4 hours',
+                    '8 hours','1 day', '1 week', '1 month']
     if isinstance(delta, str):
         return delta
     return epoch(timeQuants, td_parser(timeQuants), delta, **kwargs)
