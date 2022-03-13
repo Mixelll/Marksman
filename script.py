@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, date
 from itertools import product
 
 from marksman_models import MultiLayerModel1
-from postgresql_db import SQLconn as SQLconn
+from postgresql_db import conn as SQLconn
 
 
 def dumps(j): return json.dumps(j, sort_keys=True, default=str)
@@ -86,7 +86,7 @@ if not dm_uuid and commit:
     val = [(tickers, columns, index, str(torchBinary).replace('\n', ''), mtor.save_io(torchBinary).read(),
             list(torchBinary.keys()).sort(), ds_uuid)]  # insert values
     cmp_insert = db.composed_insert('models_prime', col, schema='dm', returning=['uuid'])  # query without values
-    dm_uuid, = db.pg_execute(SQLconn, cmp_insert, val, commit=True)[0] # parse values to query and execute
+    dm_uuid, = db.pg_execute(SQLconn, cmp_insert, val, commit=True, mogrify=True)[0] # parse values to query and execute
 
 
 # insert run start to 'runs_prime' and create {dr_uuid} run table
@@ -95,36 +95,36 @@ if commit:
     col = ['tickers', 'columns', 'index', 'dm_uuid', 'ds_uuid']
     val = [(tickers, columns, index, dm_uuid, ds_uuid)]
     cmp_insert = db.composed_insert('runs_prime', col, schema='dr', returning=['uuid'])
-    dr_uuid, = db.pg_execute(SQLconn, cmp_insert, val, commit=True)[0]
+    dr_uuid, = db.pg_execute(SQLconn, cmp_insert, val, commit=True, mogrify=True)[0]
     # create run table on DB as dr."dr_uuid"
     col = (['dt_uuid', '$uuid$', '$NOT NULL$', '$REFERENCES$', 'dt','$.$','training_prime', '$ON DELETE CASCADE$'],)
-    ColumnLists = tuple(map(list, product(list(zip(*mtor.param_tuples(model)))[0], ['$double precision$'])))
-    cmp_create = db.composed_create(dr_uuid,  col + ColumnLists, schema='dt', like='training_prime')
-    db.pg_execute(SQLconn, cmp_create, commit=True)
-    drStartDate = datetime.now()
+    columnLists = tuple(map(list, product(list(zip(*mtor.param_tuples(model)))[0], ['$double precision$'])))
+    cmp_create = db.composed_create(dr_uuid,  col + columnLists, schema='dt', like=[('dt', 'training_prime')])
+    db.pg_execute(SQLconn, cmp_create, commit=True, mogrify=True)
+    dr_startDate = datetime.now()
 else:
     dr_uuid = uuid4()
 
 optimizerf = torch.optim.SGD
 
 # Iterate over hyperparameters
-epochsL = [5]
+epochsL = 5
 lrL = [1e-4, 1e-3, 1e-2, 1e-1]
 
-print(f'RUN {dr_uuid} START')
+print(f'\n\n\nRUN {dr_uuid} START')
 print(f'MODEL: {model}')
 print(f'OPTIMIZER FUNCTION: {optimizerf}')
-totalTuples = me.iter_length(product(epochsL, lrL))
+totalTuples = me.iter_length(product([epochsL], lrL))
 
-for i, pr in enumerate(product(epochsL, lrL)):
+for i, pr in enumerate(product([epochsL], lrL)):
     epochs = pr[0]
     optimizer = optimizerf(model.parameters(), pr[1])
-    print(f'Starting hyperparam tuple #{epochsL} OF {totalTuples} FOR {epochsL} EPOCHS ')
+    print(f'\n\nStarting hyperparam tuple #{i+1} OF {totalTuples[0]} FOR {epochsL} EPOCHS ')
     print(f'Optimizer: {optimizer}')
 
     # train with shuffle arrays, traningIter times
     for u in range(0, traningIter):
-        print(f'Iter #{u} start')
+        print(f'\nIter #{u} start')
         trainDS, testDS = tud.random_split(DS, [floor((1-testFrac)*len(DS)), ceil(testFrac*len(DS))])
         trainDL = tud.DataLoader(trainDS, batchSize, shuffle=True)
         testDL = tud.DataLoader(trainDS, batchSize, shuffle=True)
@@ -157,9 +157,9 @@ for i, pr in enumerate(product(epochsL, lrL)):
             col = [['json_hr', 'json_hr', '$||$', '%s'], ['json', 'json', '$||$', '%s'], 'binary', 'binaryKeys', ]
             bn = {'model': model, 'model_state_dict': model.state_dict(),  'optimizer': optimizer,
                     'optimizer_state_dict': optimizer.state_dict(), 'optimizerf': optimizerf}
-            ColumnLists = tuple(map(list, product(list(zip(*mtor.param_tuples(model)))[0], ['$double precision$'])))
+            columnLists = tuple(map(list, product(list(zip(*mtor.param_tuples(model)))[0], ['$double precision$'])))
             jshr = fitDict | {'dt_time' : (dtEndDate - dtStartDate).total_seconds()}
-            jsh = jshr
+            js = jshr
             val = [dumps(jshr), dumps(js), mtor.save_io(bn).read(), list(bn.keys()).sort()]
             whereVal = dt_uuid
             where = ['uuid', '$=$', '%s']

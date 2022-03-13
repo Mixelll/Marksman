@@ -2,6 +2,7 @@ import json
 import numpy as np
 import pandas as pd
 
+import marksman_extras as me
 import postgresql_db as db
 
 from itertools import product

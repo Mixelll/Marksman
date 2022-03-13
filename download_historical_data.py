@@ -7,6 +7,7 @@ import postgresql_db as db
 from ib_insync import IB
 from datetime import datetime
 
+from postgresql_db import conn as SQLconn, engine as SQLengine
 
 ib = IB()
 ib.connect('127.0.0.1', 7497, clientId=1)
@@ -40,7 +41,7 @@ FORCEuseRTH = False
 schema = 'trades'
 def uploader(tableName, df):
     db.upsert_df_to_db(SQLengine, tableName, df, schema=schema)
-    dbm.df_insert_prime(SQLconn, df, tableName, schema + '_prime', schema=schema)
+    mdb.df_insert_prime(SQLconn, df, tableName, schema + '_prime', schema=schema)
 # uploader = None
 marksman_ib_queries.ticker_historical_data_trades_populate_db(ib, tickers, barSizes, startDate,
                                                                 endDate, uploader, useRTH=FORCEuseRTH)

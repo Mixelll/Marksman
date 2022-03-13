@@ -78,7 +78,7 @@ def fit(model, epochs, trainLoader, testLoader, device, loss_fn=None,
             col = list(v.keys()) + ["binary", "binaryKeys", "json_hr", "json"] + list(zip_param[0])
             cmp_insert = db.composed_insert(dbPackage['table'], col, schema = 'dt',
                                             returning = ['uuid'])
-            bn = {'model_state_dict': model.state_dict(), 'optimizer': optimizer
+            bn = {'model_state_dict': model.state_dict(), 'optimizer': optimizer,
                     'optimizer_state_dict': optimizer.state_dict()}
             jshr = result | {'epoch': 0, 'epochs': epochs,
                             'epoch_time': (t2 - t1).total_seconds()}

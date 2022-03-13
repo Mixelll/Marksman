@@ -8,14 +8,14 @@ import postgresql_db as db
 
 
 from datetime import datetime, timedelta, date
-from ib_insync import util
+from ib_insync import util, Stock
 from itertools import product
 from math import floor, ceil
 from tzlocal import get_localzone
 from uuid import uuid4
 
 from marksman_objects import Ticker
-from postgresql_db import SQLconn as SQLconn
+from postgresql_db import conn as SQLconn
 
 
 
@@ -79,8 +79,7 @@ def ticker_historical_data_trades_populate_db(ib, tickers, barSizes, startDate,
             last = df['date'].iloc[-1]
             widths.iloc[-1] = min(me.to_timezone(datetime.now(), me.get_timezone(last)) - last,
                                     barSizeTD)
-            df['duration'] = widths.map(lambda x: [x, barSizeTD][[x, 1.2 * barSizeTD] \
-                .index(min(x, 1.2 * barSizeTD))]).map(lambda x: x.total_seconds())
+            df['duration'] = widths.map(lambda x: [x, barSizeTD][[x, barSizeTD].index(min(x, barSizeTD))]).map(lambda x: x.total_seconds())
 
             if barSizeTD > day:
                 xSeconds = 365 * 24 * 3600
@@ -95,7 +94,6 @@ def ticker_historical_data_trades_populate_db(ib, tickers, barSizes, startDate,
             df['percent_year'] = xSeconds * df['percent'] / df['duration']
             df['money_moved'] = df['average'] * df['volume']
             df['close-open_volume'] = df['close-open'] * df['volume']
-            # df['market_cap_change'] = 510 * 10**6 * df['open-close']
             df.set_index(['date'], inplace=True)
             print(tuple(df.index.names))
             print(df.dtypes)

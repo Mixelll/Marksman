@@ -1,3 +1,47 @@
+"""
+This module is intended for the creation and execution of `psycopg2`
+composables, representing queries-pending-values. The composables are further
+composed together to produce PostgreSQL queries. It leverages nesting, parsing
+and keywords to generate complex queries with properly escaped names.
+
+Parameters are denoted by :param_or_type:, brackets in conjunction with this
+notation have the same meaning as when used as a Python literal.
+
+The list of major parameters recurring in the module:
+
+:param columns:
+    :[str or [str]]: List of strings[] representing column names
+    passed to `composed_columns`.
+
+:param schema:
+    :str: representing schema name
+
+:param returning:
+    :[str or NestedIterable]: parsable by `composed_parse` representing
+    returned expressions.
+
+:param conflict:
+    :[str]: representing column names following SQL's `ON CONFLICT`
+
+:param nothing:
+    Wether to `DO NOTHING` following SQL's `ON CONFLICT`
+
+:param set:
+    :[str: or Iterable]:, parsables passed to `composed_set`
+
+:param parse:
+    :Callable: passed to `composed_set` and `composed_separated`
+    as `parse=parse`, usually `composed_parse` is used.
+
+:param where:
+    :[str or NestedIterable]:, parsable passed to `composed_parse`
+"""
+
+
+
+
+
+
 # from inspect import getmembers, isfunction, isclass
 import io
 import pandas as pd
@@ -13,9 +57,18 @@ from uuid import uuid4
 # execute connection objects
 with open('connections.txt') as f:
     exec(f.read())
-SQLconn
-SQLengine
+conn
+engine
 
+def psg_operators():
+    return sql.SQL, sql.Identifier, sql.Placeholder()
+
+approvedExp = ['primary key', 'foreign key', 'references', 'default', 'uuid',
+                'on delete restrict', 'unique', 'timestamp with time zone',
+                'on delete cascade', 'current_timestamp','double precision',
+                'not null', 'json', 'bytea', 'timestamp', 'like', 'and',
+                'or', 'join', 'inner', 'left', 'right', 'full', '', '.', ',',
+                 '=', '||','++','||+', 'min', 'max', 'least', 'greatest', 'like']
 
 def get_table_as_df(connOrEngine, tbl, columns=None, schema=None, **kwargs):
     return query_get_df(connOrEngine, sql.SQL('SELECT {} FROM {}{}') \
@@ -32,11 +85,19 @@ def query_get_df(connOrEngine, query):
         return pd.DataFrame(cur.fetchall())
 
 
-def pg_execute(conn, query, values=None, commit=True, mogrify=False, as_string=False):
-    """Execute a psycopg2 composable, possibly containing a placeholder -
-    *sql.Placeholder* (``%s``) for the values.
-    Set *mogrify* or *as_string* True to print query.
+def pg_execute(conn, query, values=None, commit=True, as_string=False, mogrify=False):
+    """
+    Execute a psycopg2 composable, possibly containing a placeholder -
+    *sql.Placeholder* or `'%s'` for the `values`.
 
+    :param as_string:
+        Wether to print the output of `conn.cursor.as_string(...)`
+
+    :param mogrify:
+        Wether to print the output of `conn.cursor.mogrify(...)`
+
+    :return:
+        :[(...)]:, returns array of tuples (rows)
     """
     cur = conn.cursor()
     if as_string:
@@ -50,50 +111,77 @@ def pg_execute(conn, query, values=None, commit=True, mogrify=False, as_string=F
         return cur.fetchall()
 
 
-def composed_parse(exp, enclose=False, parse=None):
-    """Parse a nested container of strings by recursively pruning according
+def composed_columns(columns, enclose=False, parse=None, literal=None, **kwargs):
+    s = psg_operators()[0]
+    if parse is None:
+        parse = lambda x: composed_separated(x, '.', **kwargs)
+    if isinstance(columns, str):
+        columns = [columns]
+
+    if columns is None:
+        return s('*')
+    else:
+        comp = s(', ').join(map(parse, columns))
+        if enclose:
+            return s('({})').format(comp)
+        return comp
+
+
+def composed_parse(exp, safe=False, tuple_parse=composed_columns):
+    """
+    Parse a nested container of strings by recursively pruning according
     to the following rules:
 
-    - Enclose with ``$`` to parse the string raw into the quary,
-        only selected expressions are allowed.
-    - If exp is  ``%s`` or *sql.Placeholder* to parse into *sql.Placeholder*.
-    - If exp is a tuple it will be parsed by ``composed_columns``.
-    - If exp is a dict the keys will be parsed by ``composed_columns`` only if
+    - Enclose expression with `'$'` to parse the string raw into the quary,
+        only selected expressions are allowed. *
+    - If exp is  `'%s'` or *sql.Placeholder* to parse into *sql.Placeholder*.
+    - If exp is a tuple it will be parsed by `composed_columns`.
+    - If exp is a dict the keys will be parsed by `composed_columns` only if
         exp[key] evaluates to True.
-    - Else (expecting an iterable) ``composed_parse`` will be applied to
+    - Else (expecting an iterable) `composed_parse` will be applied to
         each element in the iterable.
 
-    Specify enclose to pass to ``composed_columns``
+    :param safe:
+        Wether to disable the raw parsing in *
+
+    :param exp:
+        :[:str: or :Iterable:] or str: List (or string) of parsables
+        expressions (strings or iterables).
+
+    :param enclose:
+        :Bool: passed to `composed_columns` as `enclose=enclose`
+
+    :param parse:
+        :Callable: passed to `composed_columns` as `parse=parse`,
+        usually `composed_parse` itself is used.
+
+    :return:
+        :Composable:
     """
     s, n, p = psg_operators()
-    approvedExp = ['primary key', 'foreign key', 'references', 'default', 'uuid',
-                    'on delete restrict', 'unique', 'timestamp with time zone',
-                    'on delete cascade', 'current_timestamp','double precision',
-                    'not null', 'json', 'bytea', 'timestamp', 'like', 'and',
-                    'or', 'join', 'inner', 'left', 'right', 'full', '', '.', ',',
-                     '=', '||','++','||+', 'min', 'max', 'least', 'greatest']
+
     if isinstance(exp, str):
-        if exp[0]=='$' and exp[-1]=='$':
-            if exp.strip('$ []()').lower() in approvedExp:
-                returned =  s(exp.strip('$'))
-            elif exp.strip('$ []()') == '%s':
-                e = exp.strip('$').split('%s')
+        if not safe and exp[0]=='$' and exp[-1]=='$':
+            exp = exp.replace('$','')
+            if exp.strip(' []()').lower() in approvedExp:
+                returned =  s(exp)
+            elif exp.strip(' []()') == '%s':
+                e = exp.split('%s')
                 returned = s(e[0]) + p + s(e[1])
             else:
-                raise ValueError(f'Expression: {exp.strip("$ []()")} not found \
+                raise ValueError(f'Expression: {exp.strip(" []()")} not found \
                                 in allowed expressions')
         elif exp.strip('$ []()') == '%s':
-            e = exp.split('%s')
+            e = exp.replace('$','').split('%s')
             returned = s(e[0]) + p + s(e[1])
         else:
-            returned =  n(exp.strip('$'))
+            returned =  n(exp)
     elif isinstance(exp, sql.Placeholder):
         returned = exp
     elif isinstance(exp, tuple):
-        returned = composed_columns(filter(me.mbool, exp), enclose=enclose, parse=parse)
+        returned = tuple_parse(filter(me.mbool, exp))
     elif isinstance(exp, dict):
-        returned = composed_columns(filter(me.mbool, [k for k in exp.keys() if exp[k]]),
-                                    enclose=enclose, parse=parse)
+        returned = tuple_parse(filter(me.mbool, [k for k in exp.keys() if exp[k]]))
     else:
         expPrev = exp[0]
         for x in exp[1:]:
@@ -102,13 +190,21 @@ def composed_parse(exp, enclose=False, parse=None):
             else:
                 expPrev = x
 
-        return sql.Composed([composed_parse(x, enclose) for x in filter(me.mbool, exp)])
+        return sql.Composed([composed_parse(x, safe=safe, tuple_parse=tuple_parse) for x in filter(me.mbool, exp)])
 
-    return s(' ') + returned + s(' ')
+    return s(' {} ').format(returned)
 
 
-def composed_insert(tbl, columns, schema=None, returning=None, conflict=None, nothing=False, set=None):
+def composed_insert(tbl, columns, schema=None, returning=None, conflict=None,
+                    nothing=False, set=None, parse=composed_parse):
+    """
+    Construct query with value-placeholders to insert a row into `"schema"."tbl"`
+
+    :return:
+        :Composable:, query awaiting values
+    """
     s, n, p = psg_operators()
+
     comp = s('INSERT INTO {}{} ({}) VALUES {} ').format(composed_dot(schema),
             n(tbl), composed_separated(columns), p)
 
@@ -118,65 +214,96 @@ def composed_insert(tbl, columns, schema=None, returning=None, conflict=None, no
         else:
             if set is None:
                 set = columns
-            comp += s('ON CONFLICT ({}) DO UPDATE').format(n(conflict)) + composed_set(set)
+            comp += s('ON CONFLICT ({}) DO UPDATE').format(n(conflict)) + composed_set(set, parse=parse)
 
     if returning is not None:
-        comp += s(' RETURNING {}').format(composed_separated(returning))
+        comp += s(' RETURNING {}').format(composed_separated(returning, parse=parse))
 
     return comp
 
 
-def composed_update(tbl, columns, returning=None, schema=None, where=None):
+def composed_update(tbl, columns, returning=None, schema=None, where=None,
+                    parse=composed_parse):
+    """
+    Construct query with value-placeholders to insert a row into `"schema"."tbl"`
+
+    :return:
+        :Composable:, query awaiting values
+    """
     s, n, p = psg_operators()
+
     comp = s('UPDATE {}').format(composed_dot(schema))
     comp += n(tbl) + composed_set(columns)
 
     if where is not None:
-        comp += s(' WHERE ' ) + composed_parse(where)
+        comp += s(' WHERE {}').format(parse(where))
 
     if returning is not None:
-        comp += s(' RETURNING {}').format(composed_separated(returning))
+        comp += s(' RETURNING {}').format(parse(returning))
 
     return comp
 
 
-def composed_create(tbl, columns, schema=None, schema2=None, like=None,
-                    inherits=None, constraint=None):
+def composed_create(tbl, columns, schema=None, like=None,
+                    inherits=None, constraint=None, parse=composed_parse):
+    """
+    Create a table as `"schema"."tbl"`
+
+    :param like:
+        :[str or [str]]:, parsables passed to `composed_columns`
+
+    :param inherits:
+        :[str or [str]]:, parsables passed to `composed_columns`
+
+    :param constraint:
+        :[str or NestedIterable]:, table constraints
+        parsable by `composed_parse`, passed to `composed_columns`
+
+    :return:
+        :Composable:, full create table query
+    """
     s, n, p = psg_operators()
-    if schema2 is None: schema2 = schema
+
     if isinstance(columns[0], str):
         columns = [columns]
-    schema2 = composed_dot(schema2)
     comp = s('CREATE TABLE {}{} (').format(composed_dot(schema), n(tbl))
+
     if like is not None:
-        comp += s('LIKE {}{} INCLUDING ALL,').format(schema2, n(like))
-    comp += composed_parse(columns, parse=composed_parse)
+        comp += composed_columns(like, parse=lambda x:
+            s('LIKE {} INCLUDING ALL, ').format(composed_separated(x, '.', )))
+
     if constraint:
         if isinstance(constraint[0], str): constraint = [constraint]
-        comp += s(', ')
-        for c in constraint[:-1]:
-            comp += s(' CONSTRAINT ') + composed_parse(c, enclose=True) + s(',')
-        comp += s(' CONSTRAINT ') + composed_parse(constraint[-1], enclose=True)
-    comp += s(') ')
+        comp += composed_columns(constraint, parse=lambda x:
+            s('CONSTRAINT ({}), ').format(parse(x)))
+
+    comp += composed_columns(columns, parse=parse) + s(') ')
 
     if inherits is not None:
-        comp += s('INHERITS ({}{})').format(schema2, n(inherits))
+        comp += s('INHERITS ({})').format(composed_columns(inherits))
 
     return comp
 
 
 def composed_select_from_table(tbl, columns=None, schema=None):
+    """
+    Select columns from table as `"schema"."tbl"`
+
+    :return:
+        :Composable:, full select query which can be further used to compose
+    """
     return sql.SQL('SELECT {} FROM {}{} ').format(composed_columns(columns),
                     composed_dot(schema), sql.Identifier(tbl))
 
 
-def composed_from_join(join=None, tables=None, columns=None, using=None):
+def composed_from_join(join=None, tables=None, columns=None, using=None, parse=composed_parse):
     s, _, _ = psg_operators()
     def n(x): composed_separated(x, '.')
+
     joinc = []
     for v in multiply_iter(join, max(iter_length(tables, columns, using))):
         vj = '$'+v+'$' if v else v
-        joinc.append(composed_parse([vj, '$ JOIN $']))
+        joinc.append(parse([vj, '$ JOIN $']))
 
     if tables:
         tables = list(tables)
@@ -191,7 +318,7 @@ def composed_from_join(join=None, tables=None, columns=None, using=None):
                     comp += s('ON {} = {} ').format(n(c[0]), n(c[1]))
                     if j < len(co): comp += s('AND ')
         else:
-            comp += s('NATURAL ') + composed_parse([join, '$ JOIN $']) + \
+            comp += s('NATURAL ') + parse([join, '$ JOIN $']) + \
                     s('{} ').format(n(table[i]))
     elif columns:
         columns = list(columns)
@@ -205,14 +332,29 @@ def composed_from_join(join=None, tables=None, columns=None, using=None):
     return comp
 
 
-def composed_set(columns):
-    s, n, p = psg_operators()
-    if not columns:
-        return s('')
+def composed_set(set, parse=composed_parse):
+    """
+    Return a composable of the form `SET (...) = (...)`
 
-    col = [];
-    val = [];
-    for c in columns:
+    :param like:
+        :[str or [str]]:, parsables passed to `composed_columns`
+
+    :param inherits:
+        :[str or [str]]:, parsables passed to `composed_columns`
+
+    :param set:
+        :[str or NestedIterable]:, set table columns
+        parsable by `composed_parse`, passed to `composed_columns` and
+         `composed_separated`
+
+    :return:
+        :Composable:
+    """
+    s, n, p = psg_operators()
+    if not set:
+        return s('')
+    col, val = [], []
+    for c in set:
         if isinstance(c, (tuple, list)):
             if len(c)>1:
                 col.append(c[0])
@@ -228,10 +370,22 @@ def composed_set(columns):
     else:
         formatted = s(' SET {} = {}')
     return formatted.format(composed_columns(col),
-                            composed_separated(val, parse=composed_parse))
+                            composed_separated(val, parse=parse))
 
 
 def composed_between(start=None, end=None):
+    """
+    Return a composable that compares values to `start` and `end`
+
+    :param start:
+        :str or datetime or numeric:
+
+    :param end:
+        :str or datetime or numeric:
+
+    :return:
+        :(Composable, Array):, composable and values passed to `pg_execute` are returned
+    """
     s = psg_operators()[0]
     comp = s('')
     execV = []
@@ -259,34 +413,19 @@ def composed_dot(name):
 
 
 
-def composed_columns(columns, enclose=False, parse=None, **kwargs):
-    s = psg_operators()[0]
-    if parse is None:
-        parse = lambda x: composed_separated(x, '.', **kwargs)
-    if isinstance(columns, str):
-        columns = [columns]
-
-    if columns is None:
-        return s('*')
-    else:
-        comp = s(', ').join(map(parse, columns))
-        if enclose:
-            return s('(') + comp + s(')')
-        return comp
-
-
-def composed_separated(names, sep=', ', AS=False, parse=None):
+def composed_separated(names, sep=', ', enclose=False, AS=False, parse=None):
     s, n, _ = psg_operators()
-    if not parse:
+    if parse is None:
         parse = n
     if isinstance(names, str):
         names = [names]
     names = list(filter(me.mbool, names))
-
     if sep in [',', '.', ', ', ' ', '    ']:
         comp = s(sep).join(map(parse, names))
         if AS:
             comp += s(' ') + n(sep.join(names))
+        if enclose:
+            return s('({})').format(comp)
         return comp
     else:
         raise ValueError(f'Expression: "{sep}" not found in approved separators')
@@ -321,7 +460,7 @@ def upsert_df_to_db(engine, tbl, df, schema=None, index=True):
     cur.execute(s('CREATE TEMP TABLE {} (LIKE {}{} INCLUDING ALL);').format(temp, schema, tbl))
     cur.copy_expert(s("COPY {} FROM STDIN DELIMITER '\t' CSV HEADER;").format(temp), output)
     cur.execute(s('DELETE FROM {}{} WHERE ({index}) IN (SELECT {index} FROM {});')
-        .format(schema, tbl, temp, index=composed_parse(tuple(df.index.names))))
+        .format(schema, tbl, temp, index=composed_separated(tuple(df.index.names))))
     cur.execute(s('INSERT INTO {}{} SELECT * FROM {};').format(schema, tbl, temp))
     cur.execute(s('DROP TABLE {};').format(temp))
     conn.commit()
@@ -342,7 +481,7 @@ def get_tableNames(conn, names, operator='like', not_=False, relkind=('r', 'v'),
     cursor = conn.cursor()
     cursor.execute(s('SELECT {} FROM pg_class c JOIN pg_namespace n ON \
                     n.oid = c.relnamespace WHERE relkind IN %s AND relname {} %s {};') \
-        .format(composed_parse({'nspname': qualified, 'relname': True}), c, a), execV)
+        .format(composed_parse({'nspname': qualified, 'relname': True}, safe=True), c, a), execV)
     if qualified:
         return cursor.fetchall()
     else:
@@ -412,7 +551,3 @@ def set_comment(conn, tbl, comment, schema=None):
     schema = composed_dot(schema)
     query = s('COMMENT ON TABLE {}{} IS %s').format(schema, n(tbl))
     return pg_execute(conn, query, values=[str(comment)])
-
-
-def psg_operators():
-    return sql.SQL, sql.Identifier, sql.Placeholder()

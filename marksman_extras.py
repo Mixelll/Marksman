@@ -269,32 +269,32 @@ def get_timezone(input):
     return out
 
 
-def to_timezone(input, tz_in, naive=False):
+def to_timezone(input, tz, naive=False):
     typeStr = str(type(input)).lower()
     if typeStr.find('pandas') != -1:
         try:
             if input.dt.tz == None:
                 out = input.dt.tz_localize(str(get_localzone()), ambiguous='infer',
                                             nonexistent='shift_backward').dt \
-                                            .tz_convert(str(tz_in))
+                                            .tz_convert(str(tz))
             else:
-                out = input.dt.tz_convert(tz_in)
+                out = input.dt.tz_convert(tz)
             if naive:
                 out = out.dt.tz_localize(None)
         except:
             if input.tz == None:
                 out = input.tz_localize(str(get_localzone()), ambiguous='infer',
                                         nonexistent='shift_backward') \
-                                        .tz_convert(str(tz_in))
+                                        .tz_convert(str(tz))
             else:
-                out = input.tz_convert(tz_in)
+                out = input.tz_convert(tz)
             if naive:
                 out = out.tz_localize(None)
     else:
-        if isinstance(tz_in, str):
-            out = input.astimezone(timezone(tz_in))
+        if isinstance(tz, str):
+            out = input.astimezone(timezone(tz))
         else:
-            out = input.astimezone(tz_in)
+            out = input.astimezone(tz)
         if naive:
             out = out.replace(tzinfo=None)
     return out
