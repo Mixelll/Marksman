@@ -20,7 +20,7 @@ class MultiLayerModel1(nn.Module):
         if any(hiddenSizes):
             inSizeH = inSize
             for i, l in enumerate(hiddenSizes):
-                setattr(self, 'hidden_linear' + str(i), nn.Linear(inSizeH, l, bias=bias))
+                setattr(self, 'linear' + str(i), nn.Linear(inSizeH, l, bias=bias))
                 inSizeH = l
             # output layer
             self.linear_out = nn.Linear(hiddenSizes[-1], outSize, dtype=dtype, bias=bias)
@@ -34,7 +34,7 @@ class MultiLayerModel1(nn.Module):
         # Get intermediate outputs using hidden layer
         out = xb
         for i,_ in enumerate(self.hiddenSizes):
-            out = getattr(self, 'hidden_linear%s' % i)(out)
+            out = getattr(self, 'linear%s' % i)(out)
         # Apply activation function
         # out = F.relu(out)
 

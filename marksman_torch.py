@@ -88,7 +88,7 @@ def fit(model, epochs, trainLoader, testLoader, device, loss_fn=None,
             db.pg_execute(dbPackage['conn'], cmp_insert, val)
         upload(model, optimizer, 0, time2, time1)
 
-    for epoch in range(epochs):
+    for epoch in range(1, epochs+1):
         time3 = datetime.now()
         train(model, trainLoader, device=device, loss_fn=loss_fn, optimizer=optimizer)
         result = test(model, testLoader, device=device, loss_fn=loss_fn, metric_fn=metric_fn)
