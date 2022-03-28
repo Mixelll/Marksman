@@ -30,8 +30,79 @@ AS $$
     SELECT round(n, digits - 1 - floor(log(abs(n)))::int)
 $$ LANGUAGE sql IMMUTABLE STRICT;
 
-
+# Update packages
 pip list --outdated --format=freeze | %{$_.split('==')[0]} | %{pip install --upgrade $_}
+# export package to file
+pip list --format=freeze | %{$_.split('==')[0]}
+
+(pip list --format=freeze | %{$_.split('==')[0]}) -contains 'zipp'
+
+$letterArray = pip list --format=freeze | %{$_.split('==')[0]}
+foreach ($package in pip list --format=freeze | %{$_.split('==')[0]})
+{
+if ((pip list --format=freeze | %{$_.split('==')[0]}) -contains $package)
+{
+Write-Host $package
+}
+}
+
+if (<test1>)
+    {<statement list 1>}
+[elseif (<test2>)
+    {<statement list 2>}]
+[else
+    {<statement list 3>}]
+
+$condition = $true
+if ( $condition )
+{
+    Write-Output "The condition was true"
+}
+
+
+foreach ($<item> in $<collection>){<statement list>}
+
+$letterArray = "a","b","c","d"
+foreach ($letter in $letterArray)
+{
+  Write-Host $letter
+}
+
+for (<Init>; <Condition>; <Repeat>)
+{
+    <Statement list>
+}
+# Comma separated assignment expressions enclosed in parenthesis.
+for (($i = 0), ($j = 0); $i -lt 10; $i++)
+{
+    "`$i:$i"
+    "`$j:$j"
+}
+# Sub-expression using the semicolon to separate statements.
+for ($($i = 0;$j = 0); $i -lt 10; $i++) {}
+
+
+# Comma separated assignment expressions.
+for (($i = 0), ($j = 0); $i -lt 10; $i++, $j++)
+{
+    "`$i:$i"
+    "`$j:$j"
+}
+# Comma separated assignment expressions enclosed in parenthesis.
+for (($i = 0), ($j = 0); $i -lt 10; ($i++), ($j++)) {}
+# Sub-expression using the semicolon to separate statements.
+for ($($i = 0;$j = 0); $i -lt 10; $($i++;$j++)) {}
+# For multiple Conditions use logical operators as demonstrated by the following example
+for (($i = 0), ($j = 0); $i -lt 10 -and $j -lt 10; $i++,$j++) {}
+
+
+
+
+
+
+
+
+
 
 /*pga4dash*/
 SELECT
