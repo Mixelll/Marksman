@@ -33,7 +33,10 @@ $$ LANGUAGE sql IMMUTABLE STRICT;
 # Update packages
 pip list --outdated --format=freeze | %{$_.split('==')[0]} | %{pip install --upgrade $_}
 # export package to file
-pip list --format=freeze | %{$_.split('==')[0]}
+pip freeze | %{$_.split('==')[0]}
+# Uninstall packages
+pip freeze | %{pip uninstall $_.split('==')[0]}
+
 
 (pip list --format=freeze | %{$_.split('==')[0]}) -contains 'zipp'
 
